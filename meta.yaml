@@ -1,0 +1,42 @@
+# VPkg Vandor Official Repository
+# Official packages from the Vandor team
+version: "3.0"
+repository: "https://github.com/alfariiizi/vpkg-vandor-official"
+author: "Vandor Team"
+license: "MIT"
+
+# All official Vandor packages
+packages:
+  - name: "vandor/redis-cache"
+    title: "Redis Cache"
+    description: "Simple Redis adapter using go-redis/v9 with Fx integration"
+    type: "fx-module"
+    entry: "redis.go"
+    templates: "packages/redis-cache/templates"
+    destination: "internal/vpkg/vandor/redis-cache"
+    version: "v0.1.0"
+    tags:
+      - "full-backend"
+      - "eda"
+      - "minimal"
+      - "cache"
+    dependencies:
+      - "github.com/redis/go-redis/v9"
+      - "go.uber.org/fx"
+
+  - name: "vandor/audit-logger"
+    title: "Audit Logger"
+    description: "Structured audit logging with context tracking"
+    type: "fx-module"
+    entry: "audit.go"
+    templates: "packages/audit-logger/templates"
+    destination: "internal/vpkg/vandor/audit-logger"
+    version: "v0.1.0"
+    tags:
+      - "full-backend"
+      - "eda"
+      - "minimal"
+      - "logging"
+    dependencies:
+      - "go.uber.org/zap"
+      - "go.uber.org/fx"

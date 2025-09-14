@@ -1,0 +1,116 @@
+# {{.Title}}
+
+{{.Description}}
+
+## Installation
+
+```bash
+vandor vpkg add {{.Name}}
+```
+
+## Configuration
+
+Add the following to your `config/config.yaml`:
+
+```yaml
+audit_logger:
+  service_name: "your-service-name"
+  environment: "production"
+```
+
+## Usage
+
+### Basic Usage
+
+```go
+package main
+
+import (
+	"context"
+	"{{.ModuleName}}/internal/vpkg/vandor/audit-logger"
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+)
+
+func main() {
+	fx.New(
+		auditlogger.Module(),
+		fx.Provide(func() *zap.Logger {
+			logger, _ := zap.NewProduction()
+			return logger
+		}),
+		fx.Invoke(func(audit *auditlogger.AuditLogger) {
+			ctx := context.Background()
+
+			// Log user action
+			audit.LogUserAction(ctx, "user123", "CREATE", "user", "user456", map[string]interface{}{
+				"email": "user@example.com",
+				"role": "admin",
+			})
+
+			// Log system action
+			audit.LogSystemAction(ctx, "CLEANUP", "temp_files", "", map[string]interface{}{
+				"files_deleted": 42,
+			})
+		}),
+	).Run()
+}
+```
+
+### Advanced Usage
+
+```go
+// Custom audit event
+event := auditlogger.AuditEvent{
+	UserID:     "user123",
+	Action:     "UPDATE",
+	Resource:   "profile",
+	ResourceID: "profile456",
+	Details: map[string]interface{}{
+		"fields_changed": []string{"email", "phone"},
+		"previous_email": "old@example.com",
+		"new_email": "new@example.com",
+	},
+	IP:        "192.168.1.100",
+	UserAgent: "Mozilla/5.0...",
+	SessionID: "session789",
+}
+
+audit.LogEvent(ctx, event)
+```
+
+## Features
+
+- **Structured Logging**: Uses Zap for high-performance structured logging
+- **Context Integration**: Automatically extracts request IDs and other context data
+- **Flexible Events**: Support for both user actions and system actions
+- **Rich Metadata**: Captures IP addresses, user agents, session IDs, and custom details
+- **JSON Output**: Structured JSON logs for easy parsing and analysis
+
+## Event Fields
+
+- `timestamp`: When the event occurred
+- `user_id`: ID of the user performing the action (or "system" for system actions)
+- `action`: The action performed (e.g., CREATE, READ, UPDATE, DELETE)
+- `resource`: The type of resource affected
+- `resource_id`: The ID of the specific resource
+- `details`: Additional context and metadata
+- `ip`: Client IP address
+- `user_agent`: Client user agent string
+- `session_id`: User session identifier
+- `request_id`: Request correlation ID (auto-extracted from context)
+
+## Dependencies
+
+This package requires the following Go modules:
+{{- range .Dependencies }}
+- `{{.}}`
+{{- end }}
+
+## License
+
+{{.License}}
+
+## Author
+
+{{.Author}}

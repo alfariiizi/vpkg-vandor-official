@@ -1,0 +1,104 @@
+package auditlogger
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+)
+
+// AuditEvent represents an audit log entry
+type AuditEvent struct {
+	Timestamp   time.Time              `json:"timestamp"`
+	UserID      string                 `json:"user_id,omitempty"`
+	Action      string                 `json:"action"`
+	Resource    string                 `json:"resource,omitempty"`
+	ResourceID  string                 `json:"resource_id,omitempty"`
+	Details     map[string]interface{} `json:"details,omitempty"`
+	IP          string                 `json:"ip,omitempty"`
+	UserAgent   string                 `json:"user_agent,omitempty"`
+	SessionID   string                 `json:"session_id,omitempty"`
+	RequestID   string                 `json:"request_id,omitempty"`
+}
+
+// AuditLoggerConfig provides configuration for audit logging
+type AuditLoggerConfig struct {
+	ServiceName string `yaml:"service_name" env:"AUDIT_SERVICE_NAME" default:"unknown"`
+	Environment string `yaml:"environment" env:"AUDIT_ENVIRONMENT" default:"development"`
+}
+
+// AuditLogger provides structured audit logging functionality
+type AuditLogger struct {
+	logger *zap.Logger
+	config AuditLoggerConfig
+}
+
+// NewAuditLogger creates a new audit logger instance
+func NewAuditLogger(logger *zap.Logger, config AuditLoggerConfig) *AuditLogger {
+	return &AuditLogger{
+		logger: logger.Named("audit"),
+		config: config,
+	}
+}
+
+// LogEvent logs an audit event
+func (a *AuditLogger) LogEvent(ctx context.Context, event AuditEvent) {
+	event.Timestamp = time.Now()
+
+	// Extract additional context if available
+	if requestID := ctx.Value("request_id"); requestID != nil {
+		if reqID, ok := requestID.(string); ok {
+			event.RequestID = reqID
+		}
+	}
+
+	eventJSON, _ := json.Marshal(event)
+
+	a.logger.Info("audit_event",
+		zap.String("service", a.config.ServiceName),
+		zap.String("environment", a.config.Environment),
+		zap.String("user_id", event.UserID),
+		zap.String("action", event.Action),
+		zap.String("resource", event.Resource),
+		zap.String("resource_id", event.ResourceID),
+		zap.String("ip", event.IP),
+		zap.String("session_id", event.SessionID),
+		zap.String("request_id", event.RequestID),
+		zap.String("event_json", string(eventJSON)),
+	)
+}
+
+// LogUserAction logs a user action audit event
+func (a *AuditLogger) LogUserAction(ctx context.Context, userID, action, resource, resourceID string, details map[string]interface{}) {
+	event := AuditEvent{
+		UserID:     userID,
+		Action:     action,
+		Resource:   resource,
+		ResourceID: resourceID,
+		Details:    details,
+	}
+	a.LogEvent(ctx, event)
+}
+
+// LogSystemAction logs a system action audit event
+func (a *AuditLogger) LogSystemAction(ctx context.Context, action, resource, resourceID string, details map[string]interface{}) {
+	event := AuditEvent{
+		UserID:     "system",
+		Action:     action,
+		Resource:   resource,
+		ResourceID: resourceID,
+		Details:    details,
+	}
+	a.LogEvent(ctx, event)
+}
+
+// Module provides the Fx module for AuditLogger
+func Module() fx.Option {
+	return fx.Module("audit-logger",
+		fx.Provide(
+			NewAuditLogger,
+		),
+	)
+}
