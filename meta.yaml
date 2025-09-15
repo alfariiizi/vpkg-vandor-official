@@ -38,3 +38,18 @@ packages:
     dependencies:
       - "go.uber.org/zap"
       - "go.uber.org/fx"
+
+  - name: "vandor/http-huma"
+    title: "Huma HTTP Server"
+    description: "Huma HTTP server with OpenAPI support"
+    type: "fx-module"
+    templates: "packages/http-huma/templates"
+    destination: "internal/vpkg/vandor/http-huma"
+    version: "v0.1.0"
+    tags:
+      - "full-backend"
+      - "minimal"
+    dependencies:
+      - "github.com/danielgtaylor/huma/v2"
+      - "go.uber.org/fx"
+
