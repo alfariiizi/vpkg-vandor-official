@@ -1,0 +1,73 @@
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"{{.Module}}/config"
+	"{{.Module}}/internal/infrastructure/worker"
+
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+)
+
+func main() {
+	app := fx.New(
+		// Configuration
+		fx.Provide(config.New),
+
+		// Logger
+		fx.Provide(func() *zap.Logger {
+			logger, err := zap.NewProduction()
+			if err != nil {
+				log.Fatal("Failed to create logger:", err)
+			}
+			return logger
+		}),
+
+		// Worker module
+		worker.Module,
+
+		// Application lifecycle
+		fx.Invoke(runWorker),
+	)
+
+	// Handle shutdown gracefully
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Listen for interrupt signals
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("Shutdown signal received")
+		cancel()
+		app.Stop(context.Background())
+	}()
+
+	// Start the application
+	if err := app.Start(ctx); err != nil {
+		log.Fatal("Failed to start application:", err)
+	}
+
+	// Wait for shutdown
+	<-ctx.Done()
+	log.Println("Application stopped")
+}
+
+func runWorker(server *worker.Server, logger *zap.Logger, lc fx.Lifecycle) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			logger.Info("Starting worker server")
+			return server.Start(ctx)
+		},
+		OnStop: func(ctx context.Context) error {
+			logger.Info("Stopping worker server")
+			return server.Stop(ctx)
+		},
+	})
+}

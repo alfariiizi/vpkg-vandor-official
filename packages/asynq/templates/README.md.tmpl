@@ -1,0 +1,523 @@
+# {{.Title}} - Asynq Background Job Processing
+
+Complete background job processing setup with **Asynq** for {{.Title}}. This package provides job management, worker infrastructure, monitoring tools, and CLI commands for reliable background task processing.
+
+## Features
+
+- ✅ **Asynq Integration** - Production-ready background job processing
+- ✅ **Job Management** - Create and manage background jobs with ease
+- ✅ **Worker Infrastructure** - Scalable worker server with graceful shutdown
+- ✅ **CLI Tools** - Comprehensive command-line interface for job management
+- ✅ **Monitoring** - Built-in monitoring and statistics
+- ✅ **Error Handling** - Retry mechanisms and error logging
+- ✅ **FX Integration** - Uber FX dependency injection support
+
+## Installation
+
+This package was installed via Vandor package manager:
+
+```bash
+vandor vpkg add vandor/asynq
+```
+
+## Project Structure
+
+After installation, you'll have:
+
+```
+project-root/
+├── internal/
+│   ├── job/                          # Job handlers (your custom path)
+│   │   ├── example_job.go            # Example job implementation
+│   │   └── *.go                      # Your job handlers
+│   └── infrastructure/
+│       └── worker/                   # Worker infrastructure
+│           ├── server.go             # Worker server
+│           ├── client.go             # Job client
+│           └── module.go             # FX module
+├── cmd/
+│   └── worker/
+│       └── main.go                   # Worker server entrypoint
+├── scripts/
+│   └── job-tools.sh                  # Helper scripts
+```
+
+## Quick Start
+
+### 1. Install Dependencies
+
+```bash
+# Install Asynq CLI tools
+vandor vpkg exec vandor/asynq install-deps
+
+# Or manually:
+go install github.com/hibiken/asynq/tools/asynq@latest
+```
+
+### 2. Create Your First Job
+
+```bash
+# Create a new job handler
+vandor vpkg exec vandor/asynq job new EmailNotification
+
+# This creates: internal/job/emailnotification_job.go
+```
+
+### 3. Implement Your Job Logic
+
+Edit `internal/job/emailnotification_job.go`:
+
+```go
+package job
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
+)
+
+const (
+	TypeEmailNotification = "email_notification:process"
+)
+
+type EmailNotificationPayload struct {
+	UserID    int    `json:"user_id"`
+	Email     string `json:"email"`
+	Subject   string `json:"subject"`
+	Body      string `json:"body"`
+	Template  string `json:"template"`
+}
+
+func NewEmailNotificationTask(payload EmailNotificationPayload) (*asynq.Task, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal email notification payload: %w", err)
+	}
+	return asynq.NewTask(TypeEmailNotification, data), nil
+}
+
+type EmailNotificationHandler struct {
+	logger       *zap.Logger
+	emailService EmailService // Your email service
+}
+
+func NewEmailNotificationHandler(logger *zap.Logger, emailService EmailService) *EmailNotificationHandler {
+	return &EmailNotificationHandler{
+		logger:       logger,
+		emailService: emailService,
+	}
+}
+
+func (h *EmailNotificationHandler) ProcessEmailNotification(ctx context.Context, t *asynq.Task) error {
+	var payload EmailNotificationPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal email notification payload: %w", err)
+	}
+
+	h.logger.Info("Processing email notification",
+		zap.Int("user_id", payload.UserID),
+		zap.String("email", payload.Email),
+		zap.String("subject", payload.Subject),
+	)
+
+	// Send email
+	if err := h.emailService.Send(ctx, payload.Email, payload.Subject, payload.Body); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+
+	h.logger.Info("Email notification sent successfully",
+		zap.Int("user_id", payload.UserID),
+	)
+
+	return nil
+}
+```
+
+### 4. Register Job Handler
+
+Add your job handler to `internal/infrastructure/worker/server.go`:
+
+```go
+// In NewServer function, register your handler
+mux.HandleFunc(job.TypeEmailNotification, params.EmailNotificationHandler.ProcessEmailNotification)
+```
+
+Add handler provider to `internal/infrastructure/worker/module.go`:
+
+```go
+var Module = fx.Module("worker",
+	// Worker infrastructure
+	fx.Provide(
+		NewClient,
+		NewServer,
+	),
+
+	// Job handlers
+	fx.Provide(
+		job.NewExampleJobHandler,
+		job.NewEmailNotificationHandler, // Add this line
+	),
+)
+```
+
+### 5. Start Worker Server
+
+```bash
+# Run worker server
+vandor vpkg exec vandor/asynq worker run
+
+# Or build and run binary
+vandor vpkg exec vandor/asynq worker build
+./worker
+```
+
+## Available Commands
+
+### Job Management
+
+```bash
+# Create new job handler
+vandor vpkg exec vandor/asynq job new <JobName>
+
+# Examples
+vandor vpkg exec vandor/asynq job new EmailNotification
+vandor vpkg exec vandor/asynq job new FileProcessor
+vandor vpkg exec vandor/asynq job new DataSync
+```
+
+### Worker Management
+
+```bash
+# Run worker server
+vandor vpkg exec vandor/asynq worker run
+
+# Build worker binary
+vandor vpkg exec vandor/asynq worker build
+```
+
+### Monitoring & Statistics
+
+```bash
+# Monitor queues and workers
+vandor vpkg exec vandor/asynq monitor
+
+# Show queue statistics
+vandor vpkg exec vandor/asynq stats
+```
+
+### Utilities
+
+```bash
+# Install dependencies
+vandor vpkg exec vandor/asynq install-deps
+```
+
+## Usage in Your Application
+
+### 1. Enqueue Jobs
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+
+	"{{.Module}}/internal/job"
+	"{{.Module}}/internal/infrastructure/worker"
+)
+
+func main() {
+	// Create worker client (via FX or manually)
+	client, err := worker.NewClient(worker.ClientParams{
+		Config: config,
+		Logger: logger,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	// Create and enqueue job
+	task, err := job.NewEmailNotificationTask(job.EmailNotificationPayload{
+		UserID:  123,
+		Email:   "user@example.com",
+		Subject: "Welcome!",
+		Body:    "Welcome to our service!",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Enqueue immediately
+	info, err := client.Enqueue(task)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Job enqueued: %s", info.ID)
+}
+```
+
+### 2. Delayed Jobs
+
+```go
+// Enqueue job to run in 5 minutes
+info, err := client.EnqueueIn("5m", task)
+
+// Enqueue job to run at specific time
+info, err := client.EnqueueAt(time.Now().Add(time.Hour), task)
+```
+
+### 3. Job Options
+
+```go
+import "github.com/hibiken/asynq"
+
+// Enqueue with options
+info, err := client.Enqueue(task,
+	asynq.MaxRetry(3),
+	asynq.Queue("critical"),
+	asynq.Timeout(30*time.Second),
+	asynq.Deadline(time.Now().Add(time.Hour)),
+)
+```
+
+### 4. Integration with HTTP Handlers
+
+```go
+// In your HTTP handler
+func (h *Handler) SendWelcomeEmail(ctx context.Context, req *WelcomeEmailRequest) (*WelcomeEmailResponse, error) {
+	// Create job task
+	task, err := job.NewEmailNotificationTask(job.EmailNotificationPayload{
+		UserID:  req.UserID,
+		Email:   req.Email,
+		Subject: "Welcome!",
+		Body:    "Welcome to our service!",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create email task: %w", err)
+	}
+
+	// Enqueue job
+	info, err := h.workerClient.Enqueue(task)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enqueue email job: %w", err)
+	}
+
+	return &WelcomeEmailResponse{
+		JobID: info.ID,
+		Status: "queued",
+	}, nil
+}
+```
+
+## Configuration
+
+### Worker Configuration
+
+Update your `config/config.yaml`:
+
+```yaml
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+worker:
+  concurrency: 10      # Number of concurrent workers
+  queues:
+    default: 1         # Queue priorities
+    critical: 3
+    low: 1
+```
+
+### Advanced Worker Configuration
+
+```go
+// In worker/server.go, customize server configuration
+server := asynq.NewServer(
+	redisOpt,
+	asynq.Config{
+		Concurrency:     10,
+		Queues:          map[string]int{"critical": 3, "default": 1, "low": 1},
+		BaseContext:     context.Background,
+		IsFailure:       isFailure,
+		RetryDelayFunc:  retryDelayFunc,
+		ErrorHandler:    errorHandler(logger),
+		ShutdownTimeout: 30 * time.Second,
+		Logger:          NewAsynqLogger(logger),
+	},
+)
+```
+
+## Task Integration
+
+Add these tasks to your `taskfile.yaml`:
+
+```yaml
+tasks:
+  create:job:
+    desc: Create a new job handler
+    cmds:
+      - vandor vpkg exec vandor/asynq job new {{.name}}
+    requires:
+      vars: [name]
+
+  worker:run:
+    desc: Run worker server
+    cmds:
+      - vandor vpkg exec vandor/asynq worker run
+
+  worker:build:
+    desc: Build worker binary
+    cmds:
+      - vandor vpkg exec vandor/asynq worker build
+
+  worker:monitor:
+    desc: Monitor worker queues
+    cmds:
+      - vandor vpkg exec vandor/asynq monitor
+
+  worker:stats:
+    desc: Show worker statistics
+    cmds:
+      - vandor vpkg exec vandor/asynq stats
+```
+
+## Advanced Features
+
+### 1. Periodic Jobs
+
+```go
+// Use asynq-cron for periodic jobs
+import "github.com/hibiken/asynq-cron"
+
+scheduler := asynqcron.New()
+
+// Schedule job to run every day at midnight
+_, err := scheduler.AddFunc("0 0 * * *", func() {
+	task, _ := job.NewDataSyncTask(job.DataSyncPayload{})
+	client.Enqueue(task)
+})
+```
+
+### 2. Job Chaining
+
+```go
+// Chain multiple jobs
+func ProcessOrderPipeline(orderID int) error {
+	// Step 1: Validate order
+	task1, _ := job.NewOrderValidationTask(job.OrderValidationPayload{OrderID: orderID})
+	info1, err := client.Enqueue(task1)
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Process payment (run after validation)
+	task2, _ := job.NewPaymentProcessingTask(job.PaymentProcessingPayload{OrderID: orderID})
+	_, err = client.EnqueueIn("30s", task2, asynq.ProcessAfter(info1.ID))
+
+	return err
+}
+```
+
+### 3. Dead Letter Queue
+
+```go
+// Handle failed jobs
+func (s *Server) handleFailedJobs() {
+	inspector := asynq.NewInspector(redisOpt)
+
+	// Get dead letter queue tasks
+	deadTasks, err := inspector.ListDeadTasks("default")
+	if err != nil {
+		return
+	}
+
+	for _, task := range deadTasks {
+		// Handle failed task (log, retry, or discard)
+		s.logger.Error("Dead letter task found",
+			zap.String("task_id", task.ID),
+			zap.String("task_type", task.Type),
+		)
+	}
+}
+```
+
+## Dependencies
+
+This package requires:
+
+```yaml
+dependencies:
+  - "github.com/hibiken/asynq"
+  - "github.com/hibiken/asynq-cron"     # For periodic jobs (optional)
+  - "github.com/redis/go-redis/v9"      # Redis client
+  - "go.uber.org/fx"
+  - "go.uber.org/zap"
+  - "github.com/spf13/cobra"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Q: "Connection refused to Redis"**
+A: Ensure Redis is running and accessible at the configured address
+
+**Q: "Worker not processing jobs"**
+A: Check worker server logs and ensure job handlers are properly registered
+
+**Q: "Jobs failing silently"**
+A: Check error handler implementation and logs
+
+**Q: "Memory leaks in worker"**
+A: Ensure proper context handling and resource cleanup in job handlers
+
+### Debug Mode
+
+Set environment variable for debugging:
+```bash
+export ASYNQ_DEBUG=true  # Enable Asynq debug logging
+```
+
+## Monitoring
+
+### Asynq Web UI
+
+```bash
+# Install and run Asynq web UI
+go install github.com/hibiken/asynq-mon@latest
+asynq-mon --redis-addr=localhost:6379
+```
+
+Access at: http://localhost:8080
+
+### Custom Metrics
+
+```go
+// Add custom metrics to your job handlers
+func (h *Handler) ProcessJob(ctx context.Context, t *asynq.Task) error {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		h.metrics.RecordJobDuration(t.Type(), duration)
+	}()
+
+	// Job processing logic
+	return nil
+}
+```
+
+## Version
+
+Package Version: {{.Version}}
+Compatible with: Asynq v0.24+, Go 1.21+
+
+## Example Project
+
+See the example usage in the Vandor backend template for a complete implementation.

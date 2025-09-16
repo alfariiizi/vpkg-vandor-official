@@ -1,0 +1,145 @@
+package worker
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.Module}}/config"
+	"{{.Module}}/internal/job"
+
+	"github.com/hibiken/asynq"
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+)
+
+// Server wraps asynq server for dependency injection.
+type Server struct {
+	server *asynq.Server
+	mux    *asynq.ServeMux
+	logger *zap.Logger
+}
+
+// ServerParams defines the dependencies for the worker server.
+type ServerParams struct {
+	fx.In
+
+	Config *config.Config
+	Logger *zap.Logger
+
+	// Job handlers
+	ExampleJobHandler *job.ExampleJobHandler
+}
+
+// NewServer creates a new worker server with all job handlers registered.
+func NewServer(params ServerParams) (*Server, error) {
+	redisOpt := asynq.RedisClientOpt{
+		Addr:     params.Config.Redis.Addr,
+		Password: params.Config.Redis.Password,
+		DB:       params.Config.Redis.DB,
+	}
+
+	server := asynq.NewServer(
+		redisOpt,
+		asynq.Config{
+			Concurrency:     params.Config.Worker.Concurrency,
+			BaseContext:     context.Background,
+			IsFailure:       isFailure,
+			RetryDelayFunc:  retryDelayFunc,
+			ErrorHandler:    errorHandler(params.Logger),
+			ShutdownTimeout: 30 * time.Second,
+			Logger:          NewAsynqLogger(params.Logger),
+		},
+	)
+
+	mux := asynq.NewServeMux()
+
+	// Register job handlers
+	mux.HandleFunc(job.TypeExampleJob, params.ExampleJobHandler.ProcessExampleJob)
+
+	return &Server{
+		server: server,
+		mux:    mux,
+		logger: params.Logger,
+	}, nil
+}
+
+// Start starts the worker server.
+func (s *Server) Start(ctx context.Context) error {
+	s.logger.Info("Starting worker server",
+		zap.String("component", "worker"),
+	)
+
+	go func() {
+		if err := s.server.Run(s.mux); err != nil {
+			s.logger.Error("Worker server error", zap.Error(err))
+		}
+	}()
+
+	return nil
+}
+
+// Stop stops the worker server.
+func (s *Server) Stop(ctx context.Context) error {
+	s.logger.Info("Stopping worker server")
+	s.server.Shutdown()
+	return nil
+}
+
+// isFailure determines if a task should be retried based on the error.
+func isFailure(err error) bool {
+	// Add custom logic to determine if an error should cause a retry
+	// Return true if the task should be retried, false otherwise
+	return true
+}
+
+// retryDelayFunc calculates the delay before retrying a failed task.
+func retryDelayFunc(n int, e error, t *asynq.Task) time.Duration {
+	// Exponential backoff with jitter
+	base := time.Duration(n) * time.Second
+	if base > 5*time.Minute {
+		base = 5 * time.Minute
+	}
+	return base
+}
+
+// errorHandler creates an error handler for asynq server.
+func errorHandler(logger *zap.Logger) asynq.ErrorHandlerFunc {
+	return func(ctx context.Context, task *asynq.Task, err error) {
+		logger.Error("Task processing failed",
+			zap.String("task_type", task.Type()),
+			zap.String("task_id", task.ResultWriter().TaskID()),
+			zap.Error(err),
+		)
+	}
+}
+
+// AsynqLogger adapts zap.Logger to asynq.Logger interface.
+type AsynqLogger struct {
+	logger *zap.Logger
+}
+
+// NewAsynqLogger creates a new asynq logger adapter.
+func NewAsynqLogger(logger *zap.Logger) asynq.Logger {
+	return &AsynqLogger{logger: logger}
+}
+
+func (l *AsynqLogger) Debug(args ...interface{}) {
+	l.logger.Debug(fmt.Sprint(args...))
+}
+
+func (l *AsynqLogger) Info(args ...interface{}) {
+	l.logger.Info(fmt.Sprint(args...))
+}
+
+func (l *AsynqLogger) Warn(args ...interface{}) {
+	l.logger.Warn(fmt.Sprint(args...))
+}
+
+func (l *AsynqLogger) Error(args ...interface{}) {
+	l.logger.Error(fmt.Sprint(args...))
+}
+
+func (l *AsynqLogger) Fatal(args ...interface{}) {
+	l.logger.Fatal(fmt.Sprint(args...))
+}

@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+
+# job-tools.sh — Lightweight utility for working with Asynq jobs
+
+set -e
+
+JOB_DIR="./internal/job"
+
+function usage() {
+  echo "Usage:"
+  echo "  $0 new <JobName>         Create a new job handler"
+  echo "  $0 help                  Show this help"
+  exit 1
+}
+
+function create_job() {
+  if [ -z "$1" ]; then
+    echo "Error: Missing job name"
+    exit 1
+  fi
+
+  local job_name="$1"
+  local job_name_lower=$(echo "$job_name" | tr '[:upper:]' '[:lower:]')
+  local job_name_snake=$(echo "$job_name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1_\2/g' | tr '[:upper:]' '[:lower:]')
+  local job_file="${JOB_DIR}/${job_name_lower}_job.go"
+
+  # Create job directory if it doesn't exist
+  mkdir -p "$JOB_DIR"
+
+  # Check if job file already exists
+  if [ -f "$job_file" ]; then
+    echo "Error: Job file already exists: $job_file"
+    exit 1
+  fi
+
+  # Create job file from template
+  cat > "$job_file" << EOF
+package job
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
+)
+
+const (
+	Type${job_name} = "${job_name_snake}:process"
+)
+
+// ${job_name}Payload represents the payload for ${job_name_lower} job processing.
+type ${job_name}Payload struct {
+	// TODO: Define your payload fields here
+	// Example:
+	// ID   int    \`json:"id"\`
+	// Name string \`json:"name"\`
+}
+
+// New${job_name}Task creates a new ${job_name_lower} job task.
+func New${job_name}Task(payload ${job_name}Payload) (*asynq.Task, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ${job_name_lower} job payload: %w", err)
+	}
+	return asynq.NewTask(Type${job_name}, data), nil
+}
+
+// ${job_name}Handler handles ${job_name_lower} job processing.
+type ${job_name}Handler struct {
+	logger *zap.Logger
+	// TODO: Add your dependencies here
+	// Example:
+	// userRepo UserRepository
+	// emailService EmailService
+}
+
+// New${job_name}Handler creates a new ${job_name_lower} job handler.
+func New${job_name}Handler(logger *zap.Logger /* TODO: Add your dependencies */) *${job_name}Handler {
+	return &${job_name}Handler{
+		logger: logger,
+		// TODO: Initialize your dependencies
+	}
+}
+
+// Process${job_name} processes ${job_name_lower} job tasks.
+func (h *${job_name}Handler) Process${job_name}(ctx context.Context, t *asynq.Task) error {
+	var payload ${job_name}Payload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal ${job_name_lower} job payload: %w", err)
+	}
+
+	h.logger.Info("Processing ${job_name_lower} job",
+		zap.String("task_id", t.ResultWriter().TaskID()),
+		zap.String("task_type", t.Type()),
+	)
+
+	// TODO: Implement your job logic here
+	// Example:
+	// - Process business logic
+	// - Update database records
+	// - Send notifications
+	// - Call external APIs
+
+	h.logger.Info("${job_name} job completed successfully",
+		zap.String("task_id", t.ResultWriter().TaskID()),
+	)
+
+	return nil
+}
+EOF
+
+  echo "Job '$job_name' created in $job_file"
+  echo ""
+  echo "📝 Next steps:"
+  echo "1. Edit $job_file to implement your job logic"
+  echo "2. Add handler to worker/server.go: mux.HandleFunc(job.Type${job_name}, handler.Process${job_name})"
+  echo "3. Add handler provider to worker/module.go: fx.Provide(job.New${job_name}Handler)"
+  echo "4. Use in your application:"
+  echo "   task, err := job.New${job_name}Task(job.${job_name}Payload{})"
+  echo "   info, err := client.Enqueue(task)"
+}
+
+case "$1" in
+  new)
+    create_job "$2"
+    ;;
+  help|*)
+    usage
+    ;;
+esac

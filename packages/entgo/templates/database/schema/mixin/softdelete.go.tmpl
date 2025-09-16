@@ -1,0 +1,44 @@
+package mixin
+
+import (
+	"time"
+
+	"entgo.io/ent"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/mixin"
+)
+
+type SoftDeleteMixin struct {
+	mixin.Schema
+}
+
+func (SoftDeleteMixin) Fields() []ent.Field {
+	return []ent.Field{
+		field.Time("deleted_at").
+			Optional().
+			Nillable().
+			Comment("Timestamp when the entity was soft deleted. NULL means not deleted."),
+	}
+}
+
+func (SoftDeleteMixin) Edges() []ent.Edge {
+	return []ent.Edge{}
+}
+
+// Helper methods for soft delete functionality
+
+// IsDeleted returns true if the entity is soft deleted
+func (m SoftDeleteMixin) IsDeleted(deletedAt *time.Time) bool {
+	return deletedAt != nil
+}
+
+// SoftDelete sets the deleted_at timestamp
+func (m SoftDeleteMixin) SoftDelete() *time.Time {
+	now := time.Now()
+	return &now
+}
+
+// Restore clears the deleted_at timestamp
+func (m SoftDeleteMixin) Restore() *time.Time {
+	return nil
+}

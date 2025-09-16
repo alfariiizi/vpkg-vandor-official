@@ -1,0 +1,27 @@
+package worker
+
+import (
+	"{{.Module}}/internal/job"
+
+	"go.uber.org/fx"
+)
+
+// Module provides worker client and server for dependency injection.
+var Module = fx.Module("worker",
+	// Worker infrastructure
+	fx.Provide(
+		NewClient,
+		NewServer,
+	),
+
+	// Job handlers
+	fx.Provide(
+		job.NewExampleJobHandler,
+	),
+
+	// Lifecycle hooks
+	fx.Invoke(func(server *Server) {
+		// Server is created but not started automatically
+		// Start it manually in your application lifecycle
+	}),
+)

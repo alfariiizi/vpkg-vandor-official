@@ -1,0 +1,463 @@
+# {{.Title}} - Entgo + Entrest Database Layer
+
+Complete database layer setup with **Entgo + Entrest** integration for {{.Title}}. This package provides schema management, code generation, migration tools, and REST API generation in one integrated solution.
+
+## Features
+
+- ✅ **Entgo + Entrest Integration** - Single generator creates both database layer and REST API
+- ✅ **Schema Management** - Complete schema lifecycle with mixins
+- ✅ **Atlas Migrations** - Production-ready database migrations
+- ✅ **CLI Tools** - Comprehensive command-line interface
+- ✅ **REST API Generation** - Auto-generated OpenAPI endpoints
+- ✅ **Visualization** - Entity relationship diagrams
+- ✅ **Mixins System** - Reusable field patterns (ID, Time, SoftDelete)
+
+## Installation
+
+This package was installed via Vandor package manager:
+
+```bash
+vandor vpkg add vandor/entgo
+```
+
+## Project Structure
+
+After installation, you'll have:
+
+```
+project-root/
+├── database/
+│   ├── schema/                    # Entgo schemas
+│   │   ├── mixin/                 # Reusable mixins
+│   │   │   ├── id.go              # UUID ID mixin
+│   │   │   ├── time.go            # Created/Updated timestamps
+│   │   │   └── softdelete.go      # Soft delete functionality
+│   │   └── user.go                # Example user schema
+│   └── migrations/                # Atlas migration files (auto-created)
+├── cmd/
+│   ├── entgo/main.go              # Code generator
+│   └── atlas/main.go              # Migration tool
+├── scripts/
+│   └── ent-tools.sh               # Helper scripts
+└── internal/infrastructure/db/    # Generated code (auto-created)
+    ├── *.go                       # Entgo generated files
+    └── rest/                      # Entrest REST API files
+```
+
+## Quick Start
+
+### 1. Install Dependencies
+
+```bash
+# Install required CLI tools
+vandor vpkg exec vandor/entgo install-deps
+
+# Or manually:
+go install entgo.io/ent/cmd/ent@latest
+go install ariga.io/atlas/cmd/atlas@latest
+```
+
+### 2. Create Your First Schema
+
+```bash
+# Create a new schema
+vandor vpkg exec vandor/entgo schema new Product
+
+# This creates: database/schema/product.go
+```
+
+### 3. Define Your Schema
+
+Edit `database/schema/product.go`:
+
+```go
+package schema
+
+import (
+    "{{.Module}}/database/schema/mixin"
+
+    "entgo.io/ent"
+    "entgo.io/ent/schema/field"
+    "github.com/lrstanley/entrest"
+)
+
+type Product struct {
+    ent.Schema
+}
+
+func (Product) Mixin() []ent.Mixin {
+    return []ent.Mixin{
+        mixin.IDMixin{},    // UUID ID
+        mixin.TimeMixin{},  // created_at, updated_at
+    }
+}
+
+func (Product) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("name").
+            NotEmpty().
+            Annotations(
+                entrest.WithExample("iPhone 15"),
+                entrest.WithSortable(true),
+            ),
+        field.Float("price").
+            Positive().
+            Annotations(
+                entrest.WithExample(999.99),
+                entrest.WithSortable(true),
+            ),
+        field.Text("description").
+            Optional(),
+    }
+}
+```
+
+### 4. Generate Code
+
+```bash
+# Generate Entgo + Entrest code
+vandor vpkg exec vandor/entgo generate
+
+# Or use your project's task command:
+task gen:db-model
+```
+
+### 5. Create & Apply Migrations
+
+```bash
+# Create migration
+vandor vpkg exec vandor/entgo migrate diff "add_product_table"
+
+# Check migration status
+vandor vpkg exec vandor/entgo migrate status
+
+# Apply migrations
+vandor vpkg exec vandor/entgo migrate up
+```
+
+## Available Commands
+
+### Schema Management
+
+```bash
+# Create new schema
+vandor vpkg exec vandor/entgo schema new <SchemaName>
+
+# Examples
+vandor vpkg exec vandor/entgo schema new User
+vandor vpkg exec vandor/entgo schema new Product
+vandor vpkg exec vandor/entgo schema new Order
+```
+
+### Code Generation
+
+```bash
+# Generate Entgo + Entrest code
+vandor vpkg exec vandor/entgo generate        # or 'gen'
+
+# Generate with visualization
+vandor vpkg exec vandor/entgo visualize       # or 'viz'
+```
+
+### Database Migrations
+
+```bash
+# Check migration status
+vandor vpkg exec vandor/entgo migrate status
+
+# Create new migration
+vandor vpkg exec vandor/entgo migrate diff "migration_description"
+
+# Apply migrations
+vandor vpkg exec vandor/entgo migrate up      # or 'apply'
+```
+
+### Utilities
+
+```bash
+# Install dependencies
+vandor vpkg exec vandor/entgo install-deps
+
+# Generate entity relationship diagram
+vandor vpkg exec vandor/entgo visualize
+```
+
+## Usage in Your Application
+
+### 1. Database Client
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+
+    "{{.Module}}/internal/infrastructure/db"
+    _ "github.com/lib/pq" // PostgreSQL driver
+)
+
+func main() {
+    client, err := db.Open("postgres", "postgres://user:pass@localhost/dbname?sslmode=disable")
+    if err != nil {
+        log.Fatalf("failed opening connection to postgres: %v", err)
+    }
+    defer client.Close()
+
+    // Run auto-migration (optional)
+    if err := client.Schema.Create(context.Background()); err != nil {
+        log.Fatalf("failed creating schema resources: %v", err)
+    }
+
+    // Use the client
+    ctx := context.Background()
+    user, err := client.User.
+        Create().
+        SetEmail("john@example.com").
+        SetFirstName("John").
+        SetLastName("Doe").
+        Save(ctx)
+
+    if err != nil {
+        log.Fatalf("failed creating user: %v", err)
+    }
+
+    fmt.Printf("User created: %+v\n", user)
+}
+```
+
+### 2. REST API Integration
+
+The generated REST API is available at:
+
+```go
+package main
+
+import (
+    "net/http"
+
+    "{{.Module}}/internal/infrastructure/db"
+    "{{.Module}}/internal/infrastructure/db/rest"
+)
+
+func main() {
+    client := db.Open("postgres", "...")
+
+    // Create REST handler
+    handler, err := rest.NewHandler(client)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Mount REST API
+    http.Handle("/api/", http.StripPrefix("/api", handler))
+
+    log.Println("REST API available at: http://localhost:8080/api/")
+    log.Println("OpenAPI docs at: http://localhost:8080/api/swagger/")
+
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### 3. Using Mixins
+
+The package includes common mixins:
+
+```go
+// In your schema
+func (MyEntity) Mixin() []ent.Mixin {
+    return []ent.Mixin{
+        mixin.IDMixin{},           // UUID primary key
+        mixin.TimeMixin{},         // created_at, updated_at
+        mixin.SoftDeleteMixin{},   // deleted_at for soft deletes
+    }
+}
+```
+
+### 4. Querying with Generated Code
+
+```go
+// Basic queries
+users, err := client.User.Query().
+    Where(user.StatusEQ(user.StatusACTIVE)).
+    Order(db.Asc(user.FieldCreatedAt)).
+    All(ctx)
+
+// Pagination (works with vandor/entgo-pagination)
+import pagination "{{.Module}}/internal/vpkg/vandor/entgo-pagination"
+
+req := pagination.PaginationRequest{Page: 1, Limit: 20}
+result, err := pagination.Paginate[*db.User](ctx, client.User.Query(), req)
+```
+
+## Configuration
+
+### Database Configuration
+
+Update your `config/config.yaml`:
+
+```yaml
+database:
+  driver: "postgres"
+  url: "postgres://user:pass@localhost:5432/dbname?sslmode=disable"
+  max_open_conns: 25
+  max_idle_conns: 25
+  conn_max_lifetime: "5m"
+```
+
+### Entrest Configuration
+
+The REST API is automatically configured with:
+
+- **Authentication**: JWT Bearer token support
+- **OpenAPI**: Swagger documentation
+- **Validation**: Request/response validation
+- **Filtering**: Query parameter filtering
+- **Sorting**: Sort by any field marked as sortable
+- **Pagination**: Built-in pagination support
+
+## Task Integration
+
+Add these tasks to your `taskfile.yaml`:
+
+```yaml
+tasks:
+  create:schema:
+    desc: Create a new schema
+    cmds:
+      - vandor vpkg exec vandor/entgo schema new {{.name}}
+    requires:
+      vars: [name]
+
+  gen:db-model:
+    desc: Generate DB Model code
+    cmds:
+      - echo "Generating DB Model..."
+      - vandor vpkg exec vandor/entgo generate
+      - goimports -w ./internal/infrastructure/db/rest/.
+
+  migrate:status:
+    desc: Check migration status
+    cmds:
+      - vandor vpkg exec vandor/entgo migrate status
+
+  migrate:diff:
+    desc: Generate migration diff
+    cmds:
+      - vandor vpkg exec vandor/entgo migrate diff "{{.name}}"
+    requires:
+      vars: [name]
+
+  migrate:up:
+    desc: Apply migrations
+    cmds:
+      - vandor vpkg exec vandor/entgo migrate up
+```
+
+## Advanced Features
+
+### 1. Schema Relationships
+
+```go
+// One-to-Many relationship
+func (User) Edges() []ent.Edge {
+    return []ent.Edge{
+        edge.To("posts", Post.Type),
+        edge.To("comments", Comment.Type),
+    }
+}
+
+func (Post) Edges() []ent.Edge {
+    return []ent.Edge{
+        edge.From("author", User.Type).
+            Ref("posts").
+            Unique().
+            Required(),
+    }
+}
+```
+
+### 2. Custom Entrest Annotations
+
+```go
+func (User) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("email").
+            Annotations(
+                entrest.WithExample("user@example.com"),
+                entrest.WithSortable(true),
+                entrest.WithFilter(entrest.FilterGroupEqual),
+                entrest.WithTag("json:\"email\" validate:\"required,email\""),
+            ),
+    }
+}
+```
+
+### 3. Soft Delete Implementation
+
+```go
+// Enable soft deletes
+func (User) Mixin() []ent.Mixin {
+    return []ent.Mixin{
+        mixin.SoftDeleteMixin{},
+    }
+}
+
+// Usage
+user := client.User.UpdateOneID(id).
+    SetDeletedAt(time.Now()).  // Soft delete
+    SaveX(ctx)
+
+// Query only non-deleted
+users := client.User.Query().
+    Where(user.DeletedAtIsNil()).  // Only active users
+    All(ctx)
+```
+
+## Dependencies
+
+This package requires:
+
+```yaml
+dependencies:
+  - "entgo.io/ent"
+  - "github.com/lrstanley/entrest"
+  - "github.com/hedwigz/entviz"
+  - "ariga.io/atlas"
+  - "github.com/google/uuid"
+  - "github.com/ogen-go/ogen"
+  - "github.com/lib/pq"
+  - "github.com/spf13/cobra"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Q: "Generator not found"**
+A: Run `vandor vpkg exec entgo install-deps` to install required tools
+
+**Q: "Import errors after generation"**
+A: Run `goimports -w ./internal/infrastructure/db/rest/.`
+
+**Q: "Migration files not found"**
+A: The migrations directory is auto-created. Run `migrate diff` first.
+
+**Q: "REST API returns 500 error"**
+A: Check database connection and ensure migrations are applied
+
+### Debug Mode
+
+Set environment variable for debugging:
+```bash
+export ENT_DEBUG=true  # Enable Entgo query logging
+```
+
+## Version
+
+Package Version: {{.Version}}
+Compatible with: Entgo v0.12+, Go 1.21+
+
+## Example Project
+
+See the example usage in the Vandor backend template for a complete implementation.

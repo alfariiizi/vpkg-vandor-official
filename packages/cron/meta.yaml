@@ -1,0 +1,58 @@
+name: "vandor/cron"
+title: "Cron Scheduler System"
+description: "Complete cron job scheduling system using gocron with automatic job registration and lifecycle management"
+type: "fx-module"
+entry: "cmd/cron-cli/main.go"
+templates: "templates"
+destination: "internal/vpkg/vandor/cron"
+version: "1.0.0"
+tags:
+  - "cron"
+  - "scheduler"
+  - "background-jobs"
+  - "full-backend"
+dependencies:
+  - "github.com/go-co-op/gocron"
+  - "go.uber.org/fx"
+capabilities:
+  - "cli-commands"     # Provides CLI commands for managing cron jobs
+  - "sync-integration" # Integrates with vandor sync
+  - "auto-generation"  # Auto-generates scheduler registry
+cli:
+  entry: "cmd/cron-cli/main.go"
+  commands:
+    - name: "add-job"
+      usage: "add-job <name>"
+      description: "Create a new cron job scheduler"
+    - name: "sync-jobs"
+      usage: "sync-jobs"
+      description: "Regenerate job registry"
+sync:
+  provider: "vpkg-sync/cron_sync.go"
+  commands: ["sync-jobs"]
+  description: "Auto-generates scheduler registry from job files"
+usage: |
+  ## Import the cron module:
+  ```go
+  import cron "{{.Module}}/{{.PackagePath}}"
+  ```
+
+  ## Wire into Fx application:
+  ```go
+  app := fx.New(
+      cron.Module,
+      // ... other modules
+  )
+  ```
+
+  ## Add new cron jobs:
+  ```bash
+  vandor vpkg exec vandor/cron add-job cleanup-cache
+  vandor sync all  # Regenerates job registry
+  ```
+
+  The cron system will automatically:
+  - Start scheduler on application startup
+  - Register all jobs from internal/cron/scheduler/
+  - Stop gracefully on shutdown
+  - Provide structured logging

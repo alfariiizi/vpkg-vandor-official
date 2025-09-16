@@ -1,0 +1,205 @@
+# {{.Title}} Package
+
+Complete cron job scheduling system using [gocron](https://github.com/go-co-op/gocron) with automatic job registration and Uber FX lifecycle management.
+
+## Features
+
+- ✅ **Background Scheduler**: Runs asynchronously with your application
+- ✅ **Automatic Job Registration**: Auto-discovers and registers all cron jobs
+- ✅ **Fx Integration**: Seamless integration with Uber FX dependency injection
+- ✅ **Lifecycle Management**: Graceful startup and shutdown
+- ✅ **Job Queue Integration**: Works with the vandor job system
+- ✅ **CLI Management**: Easy job creation and management via CLI
+- ✅ **Sync Integration**: Automatic registry updates with `vandor sync all`
+
+## Installation
+
+```bash
+vandor vpkg add vandor/cron
+```
+
+## Usage
+
+### 1. Import and Wire Module
+
+```go
+package main
+
+import (
+    cron "{{.Module}}/{{.PackagePath}}"
+    "go.uber.org/fx"
+)
+
+func main() {
+    app := fx.New(
+        cron.Module,
+        // ... other modules
+    )
+
+    app.Run()
+}
+```
+
+### 2. Add Cron Jobs
+
+```bash
+# Create new cron jobs
+vandor vpkg exec vandor/cron add-job cleanup-cache
+vandor vpkg exec vandor/cron add-job send-notifications
+vandor vpkg exec vandor/cron add-job backup-database
+
+# Regenerate job registry
+vandor sync all
+```
+
+### 3. Customize Job Schedules
+
+Edit generated job files in `internal/cron/scheduler/`:
+
+```go
+package scheduler
+
+import (
+    "context"
+    "log"
+
+    "{{.Module}}/internal/core/job"
+    cron "{{.Module}}/{{.PackagePath}}/init"
+)
+
+func RegisterCleanupCacheJob(s *cron.Scheduler) {
+    // Run every 30 minutes
+    s.Scheduler.Every(30).Minutes().Do(func() {
+        log.Println("[cron] Running CleanupCache job...")
+
+        payload := job.LogSystemPayload{Message: "CleanupCache job executed"}
+
+        if _, err := s.Jobs.LogSystem.Enqueue(context.Background(), payload); err != nil {
+            log.Printf("[cron] Error enqueueing CleanupCache job: %v", err)
+        }
+    })
+}
+```
+
+## Scheduling Options
+
+The cron system uses [gocron](https://github.com/go-co-op/gocron) for flexible scheduling:
+
+```go
+// Time-based scheduling
+s.Scheduler.Every(1).Minute().Do(myTask)
+s.Scheduler.Every(30).Minutes().Do(myTask)
+s.Scheduler.Every(1).Hour().Do(myTask)
+s.Scheduler.Every(1).Day().Do(myTask)
+
+// Specific time scheduling
+s.Scheduler.Every(1).Day().At("10:30").Do(myTask)
+s.Scheduler.Every().Monday().At("09:00").Do(myTask)
+
+// Cron expression
+s.Scheduler.Cron("0 30 * * * *").Do(myTask) // Every 30 minutes
+```
+
+## Architecture
+
+```
+{{.PackagePath}}/
+├── cron.go                    # Main Fx module
+├── init/
+│   └── scheduler.go           # Scheduler initialization & lifecycle
+├── scheduler/
+│   └── scheduler_registry.go  # Auto-generated job registry
+├── cmd/cron-cli/
+│   └── main.go               # CLI for job management
+└── vpkg-sync/
+    └── cron_sync.go          # Sync integration
+```
+
+## CLI Commands
+
+```bash
+# Add new cron job
+vandor vpkg exec vandor/cron add-job <name>
+
+# Sync job registry (auto-called by vandor sync all)
+vandor vpkg exec vandor/cron sync-jobs
+
+# Show help
+vandor vpkg exec vandor/cron help
+```
+
+## Generated Job Structure
+
+When you create a job with `add-job cleanup-cache`, it generates:
+
+**File**: `internal/cron/scheduler/cleanup_cache.go`
+```go
+package scheduler
+
+import (
+    "context"
+    "log"
+
+    "{{.Module}}/internal/core/job"
+    cron "{{.Module}}/{{.PackagePath}}/init"
+)
+
+func RegisterCleanupCacheJob(s *cron.Scheduler) {
+    s.Scheduler.Every(1).Minute().Do(func() {
+        log.Println("[cron] Running CleanupCache job...")
+
+        payload := job.LogSystemPayload{Message: "CleanupCache job executed"}
+
+        if _, err := s.Jobs.LogSystem.Enqueue(context.Background(), payload); err != nil {
+            log.Printf("[cron] Error enqueueing CleanupCache job: %v", err)
+        }
+    })
+}
+```
+
+## Dependencies
+
+- `github.com/go-co-op/gocron` - Cron scheduling library
+- `go.uber.org/fx` - Dependency injection framework
+- Vandor job system (`internal/core/job`)
+- Database client (`internal/infrastructure/db`)
+
+## Integration with Vandor Job System
+
+The cron jobs integrate seamlessly with the Vandor job queue system:
+
+1. **Cron triggers** → Enqueues job payload
+2. **Job workers** → Process the actual work
+3. **Database** → Stores job status and results
+4. **Logging** → Structured logging for monitoring
+
+## Best Practices
+
+1. **Keep cron jobs lightweight** - Use them to trigger heavier job queue workers
+2. **Use job payloads** - Pass data through the job system for better tracking
+3. **Handle errors gracefully** - Log errors but don't panic
+4. **Test scheduling** - Use cron expressions for complex schedules
+5. **Monitor execution** - Use structured logging for observability
+
+## Example: Complex Scheduling
+
+```go
+func RegisterReportGenerationJob(s *cron.Scheduler) {
+    // Generate monthly reports on the 1st at 02:00
+    s.Scheduler.Cron("0 0 2 1 * *").Do(func() {
+        log.Println("[cron] Running monthly report generation...")
+
+        payload := job.GenerateReportPayload{
+            ReportType: "monthly",
+            Month:      time.Now().Month(),
+            Year:       time.Now().Year(),
+        }
+
+        if _, err := s.Jobs.GenerateReport.Enqueue(context.Background(), payload); err != nil {
+            log.Printf("[cron] Error enqueueing report job: %v", err)
+        }
+    })
+}
+```
+
+The cron system provides robust, production-ready job scheduling with excellent integration into the Vandor ecosystem!

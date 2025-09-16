@@ -1,0 +1,142 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	atlas "ariga.io/atlas/sql/migrate"
+	"ariga.io/atlas/sql/schema"
+	"ariga.io/atlas/sql/sqltool"
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/schema"
+	_ "github.com/lib/pq"
+	"{{.Module}}/database/schema"
+	"{{.Module}}/internal/config"
+)
+
+func main() {
+	cfg := config.GetConfig()
+
+	if len(os.Args) < 2 {
+		log.Fatal("Usage: atlas <command> [args]")
+	}
+
+	command := os.Args[1]
+
+	switch command {
+	case "status":
+		checkMigrationStatus(cfg)
+	case "diff":
+		if len(os.Args) < 3 {
+			log.Fatal("Usage: atlas diff <migration_name>")
+		}
+		generateMigrationDiff(cfg, os.Args[2])
+	case "apply":
+		applyMigrations(cfg)
+	default:
+		log.Fatalf("Unknown command: %s", command)
+	}
+}
+
+func checkMigrationStatus(cfg *config.Config) {
+	fmt.Println("🔍 Checking migration status...")
+
+	db, err := sql.Open(cfg.Database.Driver, cfg.Database.URL)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	dir, err := atlas.NewLocalDir("database/migrations")
+	if err != nil {
+		log.Fatalf("failed to create migration directory: %v", err)
+	}
+
+	// Check for pending migrations
+	fmt.Println("📋 Migration status:")
+	fmt.Println("✅ Connected to database")
+	fmt.Printf("📁 Migration directory: database/migrations\n")
+
+	// List migration files
+	files, err := dir.Files()
+	if err != nil {
+		log.Printf("Error reading migrations: %v", err)
+		return
+	}
+
+	if len(files) == 0 {
+		fmt.Println("📭 No migration files found")
+	} else {
+		fmt.Printf("📄 Found %d migration file(s)\n", len(files))
+		for _, file := range files {
+			fmt.Printf("  - %s\n", file.Name())
+		}
+	}
+}
+
+func generateMigrationDiff(cfg *config.Config, migrationName string) {
+	fmt.Printf("🔄 Generating migration diff: %s\n", migrationName)
+
+	db, err := sql.Open(cfg.Database.Driver, cfg.Database.URL)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create migration directory if it doesn't exist
+	os.MkdirAll("database/migrations", 0755)
+
+	dir, err := atlas.NewLocalDir("database/migrations")
+	if err != nil {
+		log.Fatalf("failed to create migration directory: %v", err)
+	}
+
+	// Generate schema diff
+	opts := []schema.MigrateOption{
+		schema.WithDir(dir),
+		schema.WithMigrationMode(schema.ModeReplay),
+		schema.WithDropColumn(true),
+		schema.WithDropIndex(true),
+	}
+
+	if err := schema.Create(ctx, db, schema.New({{.Package}}schema.Client{}.Schema), opts...); err != nil {
+		log.Fatalf("failed to create schema resource: %v", err)
+	}
+
+	fmt.Printf("✅ Migration diff generated successfully: %s\n", migrationName)
+	fmt.Println("📝 Review the generated migration file in database/migrations/")
+}
+
+func applyMigrations(cfg *config.Config) {
+	fmt.Println("🚀 Applying migrations...")
+
+	db, err := sql.Open(cfg.Database.Driver, cfg.Database.URL)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	dir, err := atlas.NewLocalDir("database/migrations")
+	if err != nil {
+		log.Fatalf("failed to create migration directory: %v", err)
+	}
+
+	// Apply migrations
+	m, err := atlas.NewExecutor(db.Driver(), dir, sqltool.NewSQLite())
+	if err != nil {
+		log.Fatalf("failed to create migration executor: %v", err)
+	}
+
+	if err := m.Execute(ctx); err != nil {
+		log.Fatalf("failed to execute migrations: %v", err)
+	}
+
+	fmt.Println("✅ Migrations applied successfully")
+}

@@ -1,0 +1,145 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "asynq",
+	Short: "Asynq job management commands for {{.Title}}",
+	Long:  `Asynq job management commands for {{.Title}} - job creation, worker management, and monitoring`,
+}
+
+// Job Commands
+var jobCmd = &cobra.Command{
+	Use:   "job",
+	Short: "Job management commands",
+}
+
+var newJobCmd = &cobra.Command{
+	Use:   "new <job-name>",
+	Short: "Create a new job handler",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		jobName := args[0]
+
+		// Run job-tools.sh script
+		scriptPath := "./scripts/job-tools.sh"
+		if err := runCommand("bash", scriptPath, "new", jobName); err != nil {
+			fmt.Printf("❌ Failed to create job: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✅ Job %s created successfully!\n", jobName)
+		fmt.Printf("📝 Edit internal/job/%s_job.go to customize your job handler\n", strings.ToLower(jobName))
+	},
+}
+
+// Worker Commands
+var workerCmd = &cobra.Command{
+	Use:   "worker",
+	Short: "Worker management commands",
+}
+
+var runWorkerCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run the worker server",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("🚀 Starting worker server...")
+		if err := runCommand("go", "run", "./cmd/worker/main.go"); err != nil {
+			fmt.Printf("❌ Worker server failed: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+var buildWorkerCmd = &cobra.Command{
+	Use:   "build",
+	Short: "Build the worker server binary",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("🔨 Building worker server...")
+		if err := runCommand("go", "build", "-o", "worker", "./cmd/worker/main.go"); err != nil {
+			fmt.Printf("❌ Worker build failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("✅ Worker binary built successfully: ./worker")
+	},
+}
+
+// Monitoring Commands
+var monitorCmd = &cobra.Command{
+	Use:   "monitor",
+	Short: "Monitor job queues and workers",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("📊 Starting Asynq monitor...")
+		if err := runCommand("asynq", "monitor"); err != nil {
+			fmt.Printf("❌ Monitor failed: %v\n", err)
+			fmt.Println("💡 Tip: Install asynq CLI with: go install github.com/hibiken/asynq/tools/asynq@latest")
+			os.Exit(1)
+		}
+	},
+}
+
+var statsCmd = &cobra.Command{
+	Use:   "stats",
+	Short: "Show queue statistics",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := runCommand("asynq", "stats"); err != nil {
+			fmt.Printf("❌ Stats failed: %v\n", err)
+			fmt.Println("💡 Tip: Install asynq CLI with: go install github.com/hibiken/asynq/tools/asynq@latest")
+			os.Exit(1)
+		}
+	},
+}
+
+// Utility Commands
+var installCmd = &cobra.Command{
+	Use:   "install-deps",
+	Short: "Install Asynq CLI dependencies",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("📦 Installing Asynq CLI...")
+		if err := runCommand("go", "install", "github.com/hibiken/asynq/tools/asynq@latest"); err != nil {
+			fmt.Printf("❌ Installation failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("✅ Asynq CLI installed successfully!")
+	},
+}
+
+func runCommand(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func init() {
+	// Job commands
+	jobCmd.AddCommand(newJobCmd)
+	rootCmd.AddCommand(jobCmd)
+
+	// Worker commands
+	workerCmd.AddCommand(runWorkerCmd)
+	workerCmd.AddCommand(buildWorkerCmd)
+	rootCmd.AddCommand(workerCmd)
+
+	// Monitoring commands
+	rootCmd.AddCommand(monitorCmd)
+	rootCmd.AddCommand(statsCmd)
+
+	// Utility commands
+	rootCmd.AddCommand(installCmd)
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Printf("❌ Command failed: %v\n", err)
+		os.Exit(1)
+	}
+}

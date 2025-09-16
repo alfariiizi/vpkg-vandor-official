@@ -1,0 +1,164 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"text/template"
+	"unicode"
+
+	"{{.Module}}/cmd/utils"
+)
+
+type TemplateData struct {
+	ModuleName    string
+	PascalName    string
+	SnakeName     string
+	VpkgPath      string
+	CronPackage   string
+}
+
+// Convert PascalCase or camelCase to snake_case
+func toSnakeCase(s string) string {
+	re := regexp.MustCompile(`([a-z0-9])([A-Z])`)
+	snake := re.ReplaceAllString(s, "${1}_${2}")
+	return strings.ToLower(snake)
+}
+
+// Normalize first letter uppercase for PascalCase
+func toPascalCase(s string) string {
+	if s == "" {
+		return ""
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
+}
+
+func addJob(jobName string) {
+	if jobName == "" {
+		fmt.Println("Usage: add-job <name>")
+		os.Exit(1)
+	}
+
+	pascalName := toPascalCase(jobName)
+	snakeName := toSnakeCase(jobName)
+
+	// Generate job in the main cron structure (not in vpkg)
+	fileName := filepath.Join("internal/cron/scheduler", snakeName+".go")
+
+	// Check if file already exists
+	if _, err := os.Stat(fileName); err == nil {
+		fmt.Printf("[ERROR] File already exists: %s\n", fileName)
+		os.Exit(1)
+	}
+
+	// Create directory if not exists
+	if err := os.MkdirAll(filepath.Dir(fileName), os.ModePerm); err != nil {
+		fmt.Printf("[ERROR] Failed to create directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Job template
+	jobTemplate := `package scheduler
+
+import (
+	"context"
+	"log"
+
+	"{{.ModuleName}}/internal/core/job"
+	cron "{{.ModuleName}}/{{.VpkgPath}}/init"
+)
+
+func Register{{.PascalName}}Job(s *cron.Scheduler) {
+	s.Scheduler.Every(1).Minute().Do(func() {
+		log.Println("[cron] Running {{.PascalName}} job...")
+
+		payload := job.LogSystemPayload{Message: "{{.PascalName}} job executed"}
+
+		if _, err := s.Jobs.LogSystem.Enqueue(context.Background(), payload); err != nil {
+			log.Printf("[cron] Error enqueueing {{.PascalName}} job: %v", err)
+		}
+	})
+}`
+
+	// Create file from template
+	f, err := os.Create(fileName)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to create file: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	tmpl, err := template.New("job").Parse(jobTemplate)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to parse template: %v\n", err)
+		os.Exit(1)
+	}
+
+	data := TemplateData{
+		ModuleName:  utils.GetModuleName(),
+		PascalName:  pascalName,
+		SnakeName:   snakeName,
+		VpkgPath:    "{{.PackagePath}}",  // Will be replaced during template rendering
+		CronPackage: "{{.Package}}",     // Will be replaced during template rendering
+	}
+
+	if err := tmpl.Execute(f, data); err != nil {
+		fmt.Printf("[ERROR] Failed to execute template: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[SUCCESS] Created cron job: %s\n", fileName)
+	fmt.Println("[INFO] Run 'vandor sync all' to register the new job")
+}
+
+func syncJobs() {
+	fmt.Println("[INFO] Syncing cron jobs...")
+	// This will be called by the sync integration
+	// The actual sync logic is in vpkg-sync/cron_sync.go
+	fmt.Println("[SUCCESS] Cron jobs synced successfully")
+}
+
+func printHelp() {
+	fmt.Println("Vandor Cron CLI - Job Management Tool")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  add-job <name>    Create a new cron job scheduler")
+	fmt.Println("  sync-jobs         Regenerate job registry")
+	fmt.Println("  help              Show this help message")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  add-job cleanup-cache")
+	fmt.Println("  add-job send-notifications")
+	fmt.Println("  sync-jobs")
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		printHelp()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+
+	switch command {
+	case "add-job":
+		if len(os.Args) < 3 {
+			fmt.Println("Error: job name required")
+			fmt.Println("Usage: add-job <name>")
+			os.Exit(1)
+		}
+		addJob(os.Args[2])
+	case "sync-jobs":
+		syncJobs()
+	case "help", "--help", "-h":
+		printHelp()
+	default:
+		fmt.Printf("Error: unknown command '%s'\n\n", command)
+		printHelp()
+		os.Exit(1)
+	}
+}

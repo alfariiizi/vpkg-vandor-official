@@ -1,0 +1,88 @@
+package schema
+
+import (
+	"{{.Module}}/database/schema/mixin"
+
+	"entgo.io/ent"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/edge"
+	"github.com/lrstanley/entrest"
+)
+
+// User holds the schema definition for the User entity.
+type User struct {
+	ent.Schema
+}
+
+// Mixin returns the list of mixins for the User schema.
+func (User) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.IDMixin{},
+		mixin.TimeMixin{},
+		// mixin.SoftDeleteMixin{}, // Uncomment to enable soft deletes
+	}
+}
+
+// Fields of the User.
+func (User) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("email").
+			NotEmpty().
+			Unique().
+			Annotations(
+				entrest.WithExample("john@mail.com"),
+				entrest.WithSortable(true),
+				entrest.WithFilter(entrest.FilterGroupEqual|entrest.FilterGroupArray),
+			),
+		field.String("first_name").
+			Optional().
+			Annotations(
+				entrest.WithExample("John"),
+				entrest.WithSortable(true),
+			),
+		field.String("last_name").
+			Optional().
+			Annotations(
+				entrest.WithExample("Doe"),
+				entrest.WithSortable(true),
+			),
+		field.String("password_hash").
+			NotEmpty().
+			Sensitive().
+			Annotations(
+				entrest.WithReadOnly(true), // Never return password in API
+			),
+		field.Enum("status").
+			Values("ACTIVE", "INACTIVE", "SUSPENDED").
+			Default("ACTIVE").
+			Annotations(
+				entrest.WithExample("ACTIVE"),
+				entrest.WithFilter(entrest.FilterGroupEqual|entrest.FilterGroupArray),
+			),
+	}
+}
+
+// Edges of the User.
+func (User) Edges() []ent.Edge {
+	return []ent.Edge{
+		// Add edges to other entities here
+		// Example:
+		// edge.To("posts", Post.Type),
+		// edge.From("company", Company.Type).Ref("employees").Unique(),
+	}
+}
+
+// Annotations of the User.
+func (User) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entrest.WithCreate(entrest.CreateConfig{
+			// Customize create operation
+		}),
+		entrest.WithUpdate(entrest.UpdateConfig{
+			// Customize update operation
+		}),
+		entrest.WithDelete(entrest.DeleteConfig{
+			// Customize delete operation
+		}),
+	}
+}

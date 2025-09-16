@@ -1,0 +1,16 @@
+package {{.Package}}
+
+import (
+	cron "{{.Module}}/{{.PackagePath}}/init"
+	"{{.Module}}/{{.PackagePath}}/scheduler"
+	"go.uber.org/fx"
+)
+
+var Module = fx.Module("cron",
+	fx.Provide(
+		cron.NewScheduler,
+	),
+	fx.Invoke(func(s *cron.Scheduler) {
+		scheduler.RegisterJobs(s)
+	}),
+)

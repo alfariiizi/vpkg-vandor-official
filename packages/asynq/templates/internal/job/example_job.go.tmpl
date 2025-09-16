@@ -1,0 +1,65 @@
+package job
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
+)
+
+const (
+	TypeExampleJob = "example:process"
+)
+
+// ExampleJobPayload represents the payload for example job processing.
+type ExampleJobPayload struct {
+	UserID int    `json:"user_id"`
+	Email  string `json:"email"`
+	Data   string `json:"data"`
+}
+
+// NewExampleJobTask creates a new example job task.
+func NewExampleJobTask(payload ExampleJobPayload) (*asynq.Task, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal example job payload: %w", err)
+	}
+	return asynq.NewTask(TypeExampleJob, data), nil
+}
+
+// ExampleJobHandler handles example job processing.
+type ExampleJobHandler struct {
+	logger *zap.Logger
+}
+
+// NewExampleJobHandler creates a new example job handler.
+func NewExampleJobHandler(logger *zap.Logger) *ExampleJobHandler {
+	return &ExampleJobHandler{
+		logger: logger,
+	}
+}
+
+// ProcessExampleJob processes example job tasks.
+func (h *ExampleJobHandler) ProcessExampleJob(ctx context.Context, t *asynq.Task) error {
+	var payload ExampleJobPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal example job payload: %w", err)
+	}
+
+	h.logger.Info("Processing example job",
+		zap.Int("user_id", payload.UserID),
+		zap.String("email", payload.Email),
+		zap.String("data", payload.Data),
+	)
+
+	// TODO: Implement your job logic here
+	// Example: Send email, process data, update database, etc.
+
+	h.logger.Info("Example job completed successfully",
+		zap.Int("user_id", payload.UserID),
+	)
+
+	return nil
+}

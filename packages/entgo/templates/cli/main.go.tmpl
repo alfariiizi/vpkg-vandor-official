@@ -1,0 +1,179 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "entgo",
+	Short: "Entgo CLI commands for {{.Title}}",
+	Long:  `Entgo CLI commands for {{.Title}} - schema management, code generation, and migrations`,
+}
+
+// Schema Commands
+var schemaCmd = &cobra.Command{
+	Use:   "schema",
+	Short: "Schema management commands",
+}
+
+var newSchemaCmd = &cobra.Command{
+	Use:   "new <schema-name>",
+	Short: "Create a new Entgo schema",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		schemaName := args[0]
+
+		// Run ent-tools.sh script
+		scriptPath := "./scripts/ent-tools.sh"
+		if err := runCommand("bash", scriptPath, "new", schemaName); err != nil {
+			fmt.Printf("❌ Failed to create schema: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✅ Schema %s created successfully!\n", schemaName)
+		fmt.Printf("📝 Edit database/schema/%s.go to customize your schema\n", strings.ToLower(schemaName))
+	},
+}
+
+// Generation Commands
+var generateCmd = &cobra.Command{
+	Use:   "generate",
+	Short: "Generate Entgo code with Entrest extensions",
+	Aliases: []string{"gen"},
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("🔄 Generating Entgo + Entrest code...")
+
+		// Run entgo generator
+		if err := runCommand("go", "run", "./cmd/entgo/main.go"); err != nil {
+			fmt.Printf("❌ Code generation failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Run goimports on generated files
+		fmt.Println("📦 Formatting generated code...")
+		if err := runCommand("goimports", "-w", "./internal/infrastructure/db/rest/."); err != nil {
+			fmt.Printf("⚠️  Warning: goimports failed: %v\n", err)
+		}
+
+		fmt.Println("✅ Entgo + Entrest code generation completed!")
+	},
+}
+
+// Migration Commands
+var migrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "Database migration commands",
+}
+
+var migrateStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check migration status",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := runCommand("go", "run", "./cmd/atlas/main.go", "status"); err != nil {
+			fmt.Printf("❌ Migration status check failed: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+var migrateDiffCmd = &cobra.Command{
+	Use:   "diff <migration-name>",
+	Short: "Generate migration diff",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		migrationName := args[0]
+		if err := runCommand("go", "run", "./cmd/atlas/main.go", "diff", migrationName); err != nil {
+			fmt.Printf("❌ Migration diff generation failed: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+var migrateUpCmd = &cobra.Command{
+	Use:   "up",
+	Short: "Apply pending migrations",
+	Aliases: []string{"apply"},
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("🚀 Applying migrations...")
+		if err := runCommand("go", "run", "./cmd/atlas/main.go", "apply"); err != nil {
+			fmt.Printf("❌ Migration application failed: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+// Helper Commands
+var installCmd = &cobra.Command{
+	Use:   "install-deps",
+	Short: "Install Entgo CLI dependencies",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("📦 Installing Entgo CLI...")
+		if err := runCommand("go", "install", "entgo.io/ent/cmd/ent@latest"); err != nil {
+			fmt.Printf("❌ Installation failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("✅ Entgo CLI installed successfully!")
+	},
+}
+
+var vizCmd = &cobra.Command{
+	Use:   "visualize",
+	Short: "Generate entity relationship diagram",
+	Aliases: []string{"viz", "graph"},
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("🎨 Generating entity relationship diagram...")
+
+		// First generate code to ensure latest schema
+		if err := runCommand("go", "run", "./cmd/entgo/main.go"); err != nil {
+			fmt.Printf("❌ Code generation failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Check if diagram was generated
+		diagramPath := "./internal/infrastructure/db/ent.svg"
+		if _, err := os.Stat(diagramPath); err == nil {
+			fmt.Printf("✅ Entity diagram generated: %s\n", diagramPath)
+		} else {
+			fmt.Printf("⚠️  Diagram generation may have failed: %v\n", err)
+		}
+	},
+}
+
+func runCommand(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func init() {
+	// Schema commands
+	schemaCmd.AddCommand(newSchemaCmd)
+	rootCmd.AddCommand(schemaCmd)
+
+	// Generation command
+	rootCmd.AddCommand(generateCmd)
+
+	// Migration commands
+	migrateCmd.AddCommand(migrateStatusCmd)
+	migrateCmd.AddCommand(migrateDiffCmd)
+	migrateCmd.AddCommand(migrateUpCmd)
+	rootCmd.AddCommand(migrateCmd)
+
+	// Helper commands
+	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(vizCmd)
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Printf("❌ Command failed: %v\n", err)
+		os.Exit(1)
+	}
+}

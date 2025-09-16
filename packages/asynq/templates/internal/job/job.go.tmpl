@@ -1,0 +1,74 @@
+package job
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
+)
+
+const (
+	Type{{.JobName}} = "{{.JobNameSnake}}:process"
+)
+
+// {{.JobName}}Payload represents the payload for {{.JobNameLower}} job processing.
+type {{.JobName}}Payload struct {
+	// TODO: Define your payload fields here
+	// Example:
+	// ID   int    `json:"id"`
+	// Name string `json:"name"`
+}
+
+// New{{.JobName}}Task creates a new {{.JobNameLower}} job task.
+func New{{.JobName}}Task(payload {{.JobName}}Payload) (*asynq.Task, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal {{.JobNameLower}} job payload: %w", err)
+	}
+	return asynq.NewTask(Type{{.JobName}}, data), nil
+}
+
+// {{.JobName}}Handler handles {{.JobNameLower}} job processing.
+type {{.JobName}}Handler struct {
+	logger *zap.Logger
+	// TODO: Add your dependencies here
+	// Example:
+	// userRepo UserRepository
+	// emailService EmailService
+}
+
+// New{{.JobName}}Handler creates a new {{.JobNameLower}} job handler.
+func New{{.JobName}}Handler(logger *zap.Logger /* TODO: Add your dependencies */) *{{.JobName}}Handler {
+	return &{{.JobName}}Handler{
+		logger: logger,
+		// TODO: Initialize your dependencies
+	}
+}
+
+// Process{{.JobName}} processes {{.JobNameLower}} job tasks.
+func (h *{{.JobName}}Handler) Process{{.JobName}}(ctx context.Context, t *asynq.Task) error {
+	var payload {{.JobName}}Payload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal {{.JobNameLower}} job payload: %w", err)
+	}
+
+	h.logger.Info("Processing {{.JobNameLower}} job",
+		zap.String("task_id", t.ResultWriter().TaskID()),
+		zap.String("task_type", t.Type()),
+	)
+
+	// TODO: Implement your job logic here
+	// Example:
+	// - Process business logic
+	// - Update database records
+	// - Send notifications
+	// - Call external APIs
+
+	h.logger.Info("{{.JobName}} job completed successfully",
+		zap.String("task_id", t.ResultWriter().TaskID()),
+	)
+
+	return nil
+}

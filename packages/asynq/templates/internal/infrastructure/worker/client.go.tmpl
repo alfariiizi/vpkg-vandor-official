@@ -1,0 +1,94 @@
+package worker
+
+import (
+	"{{.Module}}/config"
+
+	"github.com/hibiken/asynq"
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+)
+
+// Client wraps asynq client for dependency injection.
+type Client struct {
+	client *asynq.Client
+	logger *zap.Logger
+}
+
+// ClientParams defines the dependencies for the worker client.
+type ClientParams struct {
+	fx.In
+
+	Config *config.Config
+	Logger *zap.Logger
+}
+
+// NewClient creates a new worker client.
+func NewClient(params ClientParams) (*Client, error) {
+	redisOpt := asynq.RedisClientOpt{
+		Addr:     params.Config.Redis.Addr,
+		Password: params.Config.Redis.Password,
+		DB:       params.Config.Redis.DB,
+	}
+
+	client := asynq.NewClient(redisOpt)
+
+	return &Client{
+		client: client,
+		logger: params.Logger,
+	}, nil
+}
+
+// Enqueue enqueues a task for processing.
+func (c *Client) Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error) {
+	info, err := c.client.Enqueue(task, opts...)
+	if err != nil {
+		c.logger.Error("Failed to enqueue task",
+			zap.String("task_type", task.Type()),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	c.logger.Info("Task enqueued successfully",
+		zap.String("task_type", task.Type()),
+		zap.String("task_id", info.ID),
+		zap.String("queue", info.Queue),
+	)
+
+	return info, nil
+}
+
+// EnqueueIn enqueues a task to be processed after the specified delay.
+func (c *Client) EnqueueIn(delay interface{}, task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error) {
+	var info *asynq.TaskInfo
+	var err error
+
+	switch d := delay.(type) {
+	case string:
+		info, err = c.client.EnqueueIn(d, task, opts...)
+	default:
+		info, err = c.client.EnqueueIn(d, task, opts...)
+	}
+
+	if err != nil {
+		c.logger.Error("Failed to enqueue delayed task",
+			zap.String("task_type", task.Type()),
+			zap.Any("delay", delay),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	c.logger.Info("Delayed task enqueued successfully",
+		zap.String("task_type", task.Type()),
+		zap.String("task_id", info.ID),
+		zap.Any("delay", delay),
+	)
+
+	return info, nil
+}
+
+// Close closes the client connection.
+func (c *Client) Close() error {
+	return c.client.Close()
+}
