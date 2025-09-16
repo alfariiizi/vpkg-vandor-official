@@ -1,0 +1,34 @@
+package middleware
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/lestrrat-go/jwx/v2/jwt"
+)
+
+func NewAuthMiddleware(api huma.API, secretKey string) func(ctx huma.Context, next func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		tokenStr := strings.TrimPrefix(ctx.Header("Authorization"), "Bearer ")
+		if tokenStr == "" {
+			huma.WriteErr(api, ctx, http.StatusUnauthorized, "Missing Authorization header")
+			return
+		}
+
+		// Parse and validate token using shared secret
+		token, err := jwt.ParseString(tokenStr,
+			jwt.WithKey(jwa.HS256, []byte(secretKey)),
+			jwt.WithValidate(true),
+		)
+		if err != nil {
+			huma.WriteErr(api, ctx, http.StatusUnauthorized, "Invalid token")
+			return
+		}
+
+		// Save token to context for handler use
+		ctx = huma.WithValue(ctx, "user", token)
+		next(ctx)
+	}
+}

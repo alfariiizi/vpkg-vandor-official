@@ -1,0 +1,54 @@
+package chimiddleware
+
+import (
+	"context"
+	"net/http"
+
+	"{{.ModuleName}}/internal/enum"
+	"github.com/lestrrat-go/jwx/v2/jwt"
+)
+
+func UserRoleMiddleware(allowedRoles []enum.UserRole) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Get user token from context (set by auth middleware)
+			userToken := r.Context().Value("user")
+			if userToken == nil {
+				http.Error(w, "User not authenticated", http.StatusUnauthorized)
+				return
+			}
+
+			token, ok := userToken.(jwt.Token)
+			if !ok {
+				http.Error(w, "Invalid token format", http.StatusInternalServerError)
+				return
+			}
+
+			// Extract user role from token
+			roleValue, exists := token.Get("role")
+			if !exists {
+				http.Error(w, "No role found in token", http.StatusForbidden)
+				return
+			}
+
+			roleStr, ok := roleValue.(string)
+			if !ok {
+				http.Error(w, "Invalid role format", http.StatusForbidden)
+				return
+			}
+
+			userRole := enum.UserRole(roleStr)
+
+			// Check if user role is in allowed roles
+			for _, allowedRole := range allowedRoles {
+				if userRole == allowedRole {
+					ctx := context.WithValue(r.Context(), "user_role", userRole)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+			}
+
+			http.Error(w, "Insufficient permissions", http.StatusForbidden)
+		})
+	}
+}

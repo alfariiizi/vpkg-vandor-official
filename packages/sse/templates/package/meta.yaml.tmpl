@@ -1,0 +1,30 @@
+# SSE Package Installation Metadata
+# This file tracks the installation of vandor/sse package
+name: "vandor/sse"
+version: "{{.PackageVersion}}"
+installed_at: "{{.InstallTime}}"
+project_name: "{{.ProjectName}}"
+module_name: "{{.ModuleName}}"
+
+# Infrastructure files (safe to overwrite on updates)
+infrastructure_files:
+  - "infrastructure/sse/sse.go"
+  - "infrastructure/sse/module.go"
+
+# Package capabilities
+capabilities:
+  - "real-time"
+  - "infrastructure"
+
+# Installation status
+status: "installed"
+
+# Integration instructions
+integration:
+  import: "{{.ModuleName}}/internal/vpkg/vandor/sse/infrastructure/sse"
+  fx_module: "sse.Module"
+  usage:
+    - "Add sse.Module to your app modules"
+    - "Inject *sse.Manager in HTTP handlers"
+    - "Use manager.ServeHTTP for /events endpoint"
+    - "Publish events with manager.Publish() or manager.PublishToUser()"

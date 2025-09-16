@@ -1,0 +1,269 @@
+# Entgo Pagination Package
+
+A comprehensive pagination utility package for Entgo schemas that provides both offset-based and cursor-based pagination with type safety and performance optimization.
+
+## Features
+
+- ✅ **Offset-based pagination** - Traditional page/limit pagination
+- ✅ **Cursor-based pagination** - High-performance pagination for large datasets
+- ✅ **Type-safe generics** - Full type safety with Go generics
+- ✅ **Validation** - Built-in request validation and normalization
+- ✅ **Metadata** - Complete pagination metadata in responses
+- ✅ **Query builder** - Fluent API for building complex paginated queries
+- ✅ **Singleton service** - Global configuration with easy customization
+- ✅ **Simple usage** - Just import and call, no setup required
+
+## Installation
+
+This package was installed via Vandor package manager:
+
+```bash
+vandor vpkg add vandor/entgo-pagination
+```
+
+## Quick Start
+
+### Basic Usage (Simple!)
+
+```go
+package main
+
+import (
+    "context"
+    "{{.Module}}/internal/vpkg/vandor/entgo-pagination"
+    "{{.Module}}/internal/infrastructure/db"
+)
+
+func GetUsers(ctx context.Context, client *db.Client, req pagination.PaginationRequest) (*pagination.PaginationResponse[*db.User], error) {
+    query := client.User.Query()
+
+    // Just call pagination.Paginate - that's it!
+    return pagination.Paginate[*db.User](ctx, query, req)
+}
+```
+
+### Customize Global Settings (Optional)
+
+```go
+package main
+
+import "{{.Module}}/internal/vpkg/vandor/entgo-pagination"
+
+func init() {
+    // Change app-wide pagination defaults by modifying the singleton
+    pagination.Default.DefaultLimit = 50  // Default page size: 50
+    pagination.Default.MaxLimit = 200     // Maximum page size: 200
+}
+```
+
+### Advanced Query Building
+
+```go
+func GetActiveUsers(ctx context.Context, client *rest.Client, req pagination.PaginationRequest) (*pagination.PaginationResponse[*rest.User], error) {
+    builder := pagination.NewPaginationQueryBuilder[*rest.User](client.User.Query())
+
+    result, err := builder.
+        WithFilter(user.StatusEQ(user.StatusActive)).
+        WithOrder(rest.Asc(user.FieldCreatedAt)).
+        Paginate(ctx, req)
+
+    return result, err
+}
+```
+
+### Cursor-based Pagination (for better performance)
+
+```go
+func GetUsersCursor(ctx context.Context, client *rest.Client, req pagination.CursorPaginationRequest) (*pagination.CursorPaginationResponse[*rest.User], error) {
+    query := client.User.Query().Order(rest.Asc(user.FieldID))
+
+    return pagination.PaginateCursor[*rest.User](
+        ctx,
+        query,
+        req,
+        user.FieldID, // cursor field
+        func(u *rest.User) interface{} { return u.ID }, // cursor value extractor
+    )
+}
+```
+
+### HTTP Handler Example
+
+```go
+package handler
+
+import (
+    "{{.Module}}/internal/vpkg/vandor/entgo-pagination"
+    "{{.Module}}/internal/infrastructure/db/rest"
+    "github.com/labstack/echo/v4"
+)
+
+func (h *UserHandler) GetUsers(c echo.Context) error {
+    // Parse pagination parameters
+    var req pagination.PaginationRequest
+    if err := c.Bind(&req); err != nil {
+        req = pagination.DefaultPaginationRequest()
+    }
+
+    // Get paginated users
+    result, err := GetUsers(c.Request().Context(), h.dbClient, req)
+    if err != nil {
+        return c.JSON(500, map[string]string{"error": err.Error()})
+    }
+
+    return c.JSON(200, result)
+}
+```
+
+### Response Format
+
+The pagination response follows a consistent format:
+
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john@example.com"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 100,
+    "total_pages": 5,
+    "has_next": true,
+    "has_previous": false
+  }
+}
+```
+
+## Configuration
+
+### Global Configuration
+
+```go
+package main
+
+import "{{.Module}}/internal/vpkg/vandor/entgo-pagination"
+
+func init() {
+    // Modify the global singleton to change app-wide defaults
+    pagination.Default.DefaultLimit = 50   // Default items per page
+    pagination.Default.MaxLimit = 200      // Maximum items per page
+}
+
+// All pagination calls will now use these defaults
+func SomeFunction() {
+    req := pagination.DefaultRequest()  // Uses DefaultLimit: 50
+    req = pagination.ValidateRequest(req) // Enforces MaxLimit: 200
+}
+```
+
+### Multiple Configurations (Advanced)
+
+```go
+// Create custom pagination services for different use cases
+var LargePagination = &pagination.PaginationService{
+    DefaultLimit: 100,
+    MaxLimit: 1000,
+}
+
+var SmallPagination = &pagination.PaginationService{
+    DefaultLimit: 10,
+    MaxLimit: 50,
+}
+
+// Use specific service
+result, err := LargePagination.Paginate[*db.User](ctx, query, req)
+```
+
+## API Reference
+
+### Types
+
+#### PaginationRequest
+```go
+type PaginationRequest struct {
+    Page  int `json:"page" query:"page" validate:"min=1"`
+    Limit int `json:"limit" query:"limit" validate:"min=1,max=100"`
+}
+```
+
+#### PaginationResponse[T]
+```go
+type PaginationResponse[T any] struct {
+    Data       []T            `json:"data"`
+    Pagination PaginationMeta `json:"pagination"`
+}
+```
+
+#### PaginationMeta
+```go
+type PaginationMeta struct {
+    Page        int  `json:"page"`
+    Limit       int  `json:"limit"`
+    Total       int  `json:"total"`
+    TotalPages  int  `json:"total_pages"`
+    HasNext     bool `json:"has_next"`
+    HasPrevious bool `json:"has_previous"`
+}
+```
+
+### Functions
+
+#### Paginate[T, Q]
+Standard pagination with automatic count and data fetching.
+
+#### PaginateWithCustomQuery[T]
+Manual pagination when you need custom count and data queries.
+
+#### PaginateCursor[T, Q]
+Cursor-based pagination for high-performance scenarios.
+
+#### NewPaginationQueryBuilder[T, Q]
+Creates a fluent query builder for complex pagination scenarios.
+
+## Best Practices
+
+1. **Use cursor pagination** for large datasets (>10k records)
+2. **Validate inputs** using the built-in validation functions
+3. **Set reasonable limits** (default: 20, max: 100)
+4. **Index cursor fields** for optimal cursor pagination performance
+5. **Cache counts** for expensive count queries when possible
+
+## Performance Considerations
+
+- **Offset pagination**: Performance degrades with large offsets. Consider cursor pagination for deep pages.
+- **Count queries**: Can be expensive on large tables. Consider approximate counts or caching.
+- **Indexing**: Ensure proper indexes on sort and filter fields.
+- **Cursor fields**: Use indexed, sequential fields (ID, timestamp) for cursor pagination.
+
+## Examples in Vandor Project
+
+Check the following files for real-world usage examples:
+- `internal/core/usecase/*_usecase.go` - Business logic with pagination
+- `internal/delivery/http/handler/*_handler.go` - HTTP endpoints with pagination
+- `internal/infrastructure/db/repository/*_repository.go` - Repository layer with pagination
+
+## Troubleshooting
+
+### Common Issues
+
+**Q: "Page parameter is ignored"**
+A: Ensure page is 1-based, not 0-based. Pages start from 1.
+
+**Q: "Performance is slow with large offsets"**
+A: Switch to cursor-based pagination for better performance.
+
+**Q: "Count query is too slow"**
+A: Consider using `PaginateWithCustomQuery` with an approximate count or cached count.
+
+**Q: "Type errors with generics"**
+A: Ensure your query type implements the required interface methods.
+
+## Version
+
+Package Version: 1.0.0
+Compatible with: Entgo v0.11+, Go 1.21+

@@ -1,0 +1,55 @@
+package http
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+
+	"{{.ModuleName}}/internal/config"
+	"{{.ModuleName}}/internal/vpkg/vandor/http-huma/delivery/http/api"
+	"go.uber.org/fx"
+
+	"github.com/go-chi/chi/v5"
+
+	_ "github.com/danielgtaylor/huma/v2/formats/cbor"
+)
+
+type HttpServer struct {
+	Router *chi.Mux
+}
+
+func NewHttpServer(
+	lc fx.Lifecycle,
+	router *chi.Mux,
+	api *api.HttpApi,
+) *HttpServer {
+	cfg := config.GetConfig()
+
+	server := http.Server{
+		Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.HTTP.Port),
+		Handler: router,
+	}
+
+	// Serve static files from ./storage/public at /static path
+	router.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("./storage/public"))))
+
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			go func() {
+				if err := server.ListenAndServe(); err != nil {
+					log.Fatal("Failed to start server: ", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			server.Shutdown(ctx)
+			return nil
+		},
+	})
+
+	return &HttpServer{
+		Router: router,
+	}
+}

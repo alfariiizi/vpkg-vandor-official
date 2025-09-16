@@ -1,0 +1,41 @@
+# HTTP-Huma Package Installation Metadata
+# This file tracks the installation of vandor/http-huma package
+name: "vandor/http-huma"
+version: "{{.PackageVersion}}"
+installed_at: "{{.InstallTime}}"
+project_name: "{{.ProjectName}}"
+module_name: "{{.ModuleName}}"
+
+# Infrastructure files (safe to overwrite on updates)
+infrastructure_files:
+  - "delivery/http/http.go"
+  - "delivery/http/server/server.go"
+  - "delivery/http/api/api.go"
+  - "delivery/http/method/method.go"
+  - "delivery/http/api/middleware/auth.go"
+  - "delivery/http/api/middleware/tenant.go"
+  - "delivery/http/api/middleware/job.go"
+  - "delivery/http/api/middleware/user_role.go"
+  - "delivery/http/api/chi-middleware/auth.go"
+  - "delivery/http/api/chi-middleware/logger.go"
+  - "delivery/http/api/chi-middleware/user_role.go"
+  - "cli/main.go"
+  - "sync/http_sync.go"
+
+# Project integration files (auto-generated, safe to overwrite)
+project_files:
+  - "../../../delivery/http/route/routes.go"
+
+# User-managed files (NEVER overwrite)
+protected_patterns:
+  - "../../../delivery/http/route/*/[!routes].go"
+  - "../../../delivery/http/api/middleware/custom_*.go"
+
+# Package capabilities
+capabilities:
+  - "cli-commands"
+  - "sync-integration"
+  - "auto-generation"
+
+# Installation status
+status: "installed"

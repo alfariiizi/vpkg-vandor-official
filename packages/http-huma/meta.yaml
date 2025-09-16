@@ -1,0 +1,103 @@
+name: "vandor/http-huma"
+title: "HTTP Huma Framework"
+description: "Complete HTTP delivery layer using Huma v2 with automatic route generation and Uber FX integration"
+type: "fx-module"
+version: "v1.0.0"
+templates: "templates"
+destination: "internal/vpkg/vandor/http-huma"
+author: "Vandor Team"
+license: "MIT"
+tags: ["http", "huma", "rest", "api", "full-backend"]
+
+# Special vpkg capabilities
+capabilities:
+  - "cli-commands"     # Provides CLI commands for route management
+  - "sync-integration" # Integrates with vandor sync system
+  - "auto-generation"  # Auto-generates route registrations
+
+# CLI commands provided by this package
+cli:
+  entry: "cmd/http-cli/main.go"
+  commands:
+    - name: "add-route"
+      description: "Add a new HTTP route handler"
+      usage: "add-route <group> <name> <method>"
+      examples:
+        - "add-route user login POST"
+        - "add-route product list GET"
+    - name: "add-middleware"
+      description: "Add a new HTTP middleware"
+      usage: "add-middleware <name>"
+    - name: "sync-routes"
+      description: "Regenerate route registrations"
+      usage: "sync-routes"
+
+# Sync integration
+sync:
+  provider: "vpkg-sync/http_sync.go"
+  commands: ["sync-routes"]
+
+# Dependencies
+dependencies:
+  - "github.com/danielgtaylor/huma/v2"
+  - "github.com/go-chi/chi/v5"
+  - "go.uber.org/fx"
+
+# Installation hooks
+install:
+  post_install:
+    - "Set up HTTP delivery layer structure"
+    - "Register sync integration with vandor sync system"
+    - "CLI commands available via: vandor vpkg exec vandor/http-huma <command>"
+
+# Template files organized by destination
+files:
+  # Infrastructure files (installed to internal/vpkg/vandor/http-huma)
+  infrastructure:
+    - "templates/infrastructure/delivery/http/http.go.tmpl"
+    - "templates/infrastructure/delivery/http/server/server.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/api.go.tmpl"
+    - "templates/infrastructure/delivery/http/method/method.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/middleware/auth.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/middleware/tenant.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/middleware/job.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/middleware/user_role.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/chi-middleware/auth.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/chi-middleware/logger.go.tmpl"
+    - "templates/infrastructure/delivery/http/api/chi-middleware/user_role.go.tmpl"
+    - "templates/infrastructure/cli/main.go.tmpl"
+    - "templates/infrastructure/sync/http_sync.go.tmpl"
+
+  # Project files (installed to main project locations)
+  project:
+    - src: "templates/project/delivery/http/route/routes.go.tmpl"
+      dest: "internal/delivery/http/route/routes.go"
+
+  # Package tracking (installed to vpkg location)
+  package:
+    - "templates/package/meta.yaml.tmpl"
+
+# Usage instructions
+usage: |
+  After installation:
+
+  1. Add routes:
+     vandor vpkg exec vandor/http-huma add-route user login POST
+     vandor vpkg exec vandor/http-huma add-route user profile GET
+
+  2. Add middleware:
+     vandor vpkg exec vandor/http-huma add-middleware auth
+
+  3. Sync everything:
+     vandor sync all  # Now includes HTTP route auto-generation
+
+  4. Manual sync:
+     vandor vpkg exec vandor/http-huma sync-routes
+
+  Complete HTTP infrastructure with:
+  - Huma v2 API framework with OpenAPI documentation
+  - Chi router with middleware support
+  - JWT authentication and role-based authorization
+  - Tenant and job-specific middleware
+  - Automatic route registration and sync
+  - Prometheus metrics and SSE support

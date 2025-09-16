@@ -1,0 +1,52 @@
+package middleware
+
+import (
+	"net/http"
+
+	"{{.ModuleName}}/internal/enum"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/lestrrat-go/jwx/v2/jwt"
+)
+
+func UserRoleMiddleware(api huma.API, allowedRoles []enum.UserRole) func(ctx huma.Context, next func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		// Get user token from context (set by auth middleware)
+		userToken := huma.GetValue(ctx, "user")
+		if userToken == nil {
+			huma.WriteErr(api, ctx, http.StatusUnauthorized, "User not authenticated")
+			return
+		}
+
+		token, ok := userToken.(jwt.Token)
+		if !ok {
+			huma.WriteErr(api, ctx, http.StatusInternalServerError, "Invalid token format")
+			return
+		}
+
+		// Extract user role from token
+		roleValue, exists := token.Get("role")
+		if !exists {
+			huma.WriteErr(api, ctx, http.StatusForbidden, "No role found in token")
+			return
+		}
+
+		roleStr, ok := roleValue.(string)
+		if !ok {
+			huma.WriteErr(api, ctx, http.StatusForbidden, "Invalid role format")
+			return
+		}
+
+		userRole := enum.UserRole(roleStr)
+
+		// Check if user role is in allowed roles
+		for _, allowedRole := range allowedRoles {
+			if userRole == allowedRole {
+				ctx = huma.WithValue(ctx, "user_role", userRole)
+				next(ctx)
+				return
+			}
+		}
+
+		huma.WriteErr(api, ctx, http.StatusForbidden, "Insufficient permissions")
+	}
+}

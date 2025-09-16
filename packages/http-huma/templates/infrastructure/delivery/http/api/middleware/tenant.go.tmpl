@@ -1,0 +1,21 @@
+package middleware
+
+import (
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+)
+
+func NewTenantMiddleware(api huma.API) func(ctx huma.Context, next func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		tenantID := ctx.Header("X-Tenant-ID")
+		if tenantID == "" {
+			huma.WriteErr(api, ctx, http.StatusBadRequest, "Missing X-Tenant-ID header")
+			return
+		}
+
+		// Save tenant ID to context for handler use
+		ctx = huma.WithValue(ctx, "tenant_id", tenantID)
+		next(ctx)
+	}
+}

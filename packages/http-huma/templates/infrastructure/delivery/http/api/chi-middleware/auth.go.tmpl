@@ -1,0 +1,44 @@
+package chimiddleware
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/lestrrat-go/jwx/v2/jwt"
+)
+
+func AuthMiddleware(secretKey []byte) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+				return
+			}
+
+			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+			if tokenStr == authHeader {
+				http.Error(w, "Invalid Authorization header format", http.StatusUnauthorized)
+				return
+			}
+
+			// Parse and validate token
+			token, err := jwt.ParseString(tokenStr,
+				jwt.WithKey(jwa.HS256, secretKey),
+				jwt.WithValidate(true),
+			)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Invalid token: %v", err), http.StatusUnauthorized)
+				return
+			}
+
+			// Add token to request context
+			ctx := context.WithValue(r.Context(), "user", token)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}

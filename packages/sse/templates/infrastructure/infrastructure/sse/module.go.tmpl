@@ -1,0 +1,30 @@
+package sse
+
+import (
+	"context"
+	"time"
+
+	"go.uber.org/fx"
+)
+
+var Module = fx.Module(
+	"sse",
+	fx.Provide(
+		func() *Manager {
+			return NewManager(
+				time.Second * 30, // 30 second heartbeat for production
+			)
+		},
+	),
+	fx.Invoke(
+		func(lc fx.Lifecycle, manager *Manager) {
+			// Graceful shutdown hook
+			lc.Append(fx.Hook{
+				OnStop: func(ctx context.Context) error {
+					manager.Close()
+					return nil
+				},
+			})
+		},
+	),
+)

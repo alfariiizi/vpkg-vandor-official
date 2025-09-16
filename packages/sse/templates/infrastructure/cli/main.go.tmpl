@@ -1,0 +1,357 @@
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"{{.ModuleName}}/internal/utils"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+
+	switch command {
+	case "stats":
+		showStats()
+	case "test-connection":
+		endpoint := "http://localhost:8080/events"
+		if len(os.Args) > 2 {
+			endpoint = os.Args[2]
+		}
+		testConnection(endpoint)
+	case "monitor":
+		endpoint := "http://localhost:8080/events"
+		if len(os.Args) > 2 {
+			endpoint = os.Args[2]
+		}
+		monitorEvents(endpoint)
+	case "publish":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: publish <event> <data> [topic]")
+			fmt.Println("Example: publish notification 'Hello World'")
+			fmt.Println("Example: publish user_update '{\"id\":123}' user:123")
+			os.Exit(1)
+		}
+		event := os.Args[2]
+		data := os.Args[3]
+		topic := ""
+		if len(os.Args) > 4 {
+			topic = os.Args[4]
+		}
+		publishEvent(event, data, topic)
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Println("SSE CLI - Server-Sent Events Monitoring and Testing")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  stats                          Show SSE manager statistics")
+	fmt.Println("  test-connection [endpoint]     Test SSE endpoint connectivity")
+	fmt.Println("  monitor [endpoint]             Monitor live SSE events")
+	fmt.Println("  publish <event> <data> [topic] Publish an event (requires API)")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  stats")
+	fmt.Println("  test-connection http://localhost:8080/events")
+	fmt.Println("  monitor http://localhost:8080/events?topics=user:123")
+	fmt.Println("  publish notification 'Hello World'")
+	fmt.Println("  publish user_update '{\"id\":123}' user:123")
+}
+
+func showStats() {
+	// This would ideally connect to a stats endpoint or read from metrics
+	// For now, provide guidance on how to implement stats monitoring
+	fmt.Println("📊 SSE Statistics")
+	fmt.Println("================")
+	fmt.Println()
+	fmt.Println("To monitor SSE statistics, implement a stats endpoint in your HTTP API:")
+	fmt.Println()
+	fmt.Println("```go")
+	fmt.Println("func (api *HttpApi) setupStatsEndpoint() {")
+	fmt.Println("    api.router.Get(\"/api/sse/stats\", func(w http.ResponseWriter, r *http.Request) {")
+	fmt.Println("        clients, topics, drops := api.sseManager.Stats()")
+	fmt.Println("        stats := map[string]interface{}{")
+	fmt.Println("            \"connected_clients\": clients,")
+	fmt.Println("            \"active_topics\": topics,")
+	fmt.Println("            \"dropped_messages\": drops,")
+	fmt.Println("            \"timestamp\": time.Now(),")
+	fmt.Println("        }")
+	fmt.Println("        json.NewEncoder(w).Encode(stats)")
+	fmt.Println("    })")
+	fmt.Println("}")
+	fmt.Println("```")
+	fmt.Println()
+	fmt.Println("Then query: GET /api/sse/stats")
+
+	// Try to get stats from a common endpoint
+	tryGetStats("http://localhost:8080/api/sse/stats")
+}
+
+func tryGetStats(endpoint string) {
+	fmt.Printf("\n🔍 Attempting to fetch stats from %s...\n", endpoint)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		fmt.Printf("❌ Could not connect to stats endpoint: %v\n", err)
+		fmt.Println("💡 Make sure your server is running and has a stats endpoint")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("❌ Stats endpoint returned status %d\n", resp.StatusCode)
+		return
+	}
+
+	var stats map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		fmt.Printf("❌ Could not parse stats response: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ Live SSE Statistics:")
+	for key, value := range stats {
+		fmt.Printf("   %s: %v\n", key, value)
+	}
+}
+
+func testConnection(endpoint string) {
+	fmt.Printf("🔗 Testing SSE connection to %s\n", endpoint)
+	fmt.Println("=====================================")
+	fmt.Println()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		fmt.Printf("❌ Error creating request: %v\n", err)
+		return
+	}
+
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	fmt.Printf("📡 Connecting to %s...\n", endpoint)
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("❌ Connection failed: %v\n", err)
+		fmt.Println("💡 Make sure your server is running and SSE endpoint is available")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("❌ Server returned status %d\n", resp.StatusCode)
+		return
+	}
+
+	if resp.Header.Get("Content-Type") != "text/event-stream" {
+		fmt.Printf("⚠️  Warning: Content-Type is '%s', expected 'text/event-stream'\n",
+			resp.Header.Get("Content-Type"))
+	}
+
+	fmt.Println("✅ Connection successful!")
+	fmt.Printf("   Content-Type: %s\n", resp.Header.Get("Content-Type"))
+	fmt.Printf("   Cache-Control: %s\n", resp.Header.Get("Cache-Control"))
+	fmt.Printf("   Connection: %s\n", resp.Header.Get("Connection"))
+	fmt.Println()
+	fmt.Println("🎉 SSE endpoint is working correctly!")
+	fmt.Println("💡 Use 'monitor' command to see live events")
+}
+
+func monitorEvents(endpoint string) {
+	fmt.Printf("👀 Monitoring SSE events from %s\n", endpoint)
+	fmt.Println("========================================")
+	fmt.Println("Press Ctrl+C to stop monitoring")
+	fmt.Println()
+
+	client := &http.Client{Timeout: 0} // No timeout for monitoring
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		fmt.Printf("❌ Error creating request: %v\n", err)
+		return
+	}
+
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("❌ Connection failed: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("❌ Server returned status %d\n", resp.StatusCode)
+		return
+	}
+
+	fmt.Println("✅ Connected! Listening for events...")
+	fmt.Println()
+
+	scanner := bufio.NewScanner(resp.Body)
+	var currentEvent map[string]string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if line == "" {
+			// Empty line indicates end of event
+			if currentEvent != nil {
+				printEvent(currentEvent)
+				currentEvent = nil
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, ":") {
+			// Comment line
+			comment := strings.TrimPrefix(line, ": ")
+			if comment == "connected" {
+				fmt.Println("🔌 Connected to SSE stream")
+			} else if comment == "heartbeat" {
+				fmt.Printf("💓 Heartbeat - %s\n", time.Now().Format("15:04:05"))
+			} else {
+				fmt.Printf("💬 Comment: %s\n", comment)
+			}
+			continue
+		}
+
+		// Parse SSE fields
+		if currentEvent == nil {
+			currentEvent = make(map[string]string)
+		}
+
+		parts := strings.SplitN(line, ": ", 2)
+		if len(parts) == 2 {
+			field, value := parts[0], parts[1]
+			currentEvent[field] = value
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("❌ Error reading stream: %v\n", err)
+	}
+}
+
+func printEvent(event map[string]string) {
+	timestamp := time.Now().Format("15:04:05")
+
+	if eventType, ok := event["event"]; ok {
+		fmt.Printf("📨 [%s] Event: %s\n", timestamp, eventType)
+	} else {
+		fmt.Printf("📨 [%s] Event (no type)\n", timestamp)
+	}
+
+	if id, ok := event["id"]; ok {
+		fmt.Printf("   ID: %s\n", id)
+	}
+
+	if data, ok := event["data"]; ok {
+		// Try to pretty-print JSON
+		var jsonData interface{}
+		if err := json.Unmarshal([]byte(data), &jsonData); err == nil {
+			if prettyJSON, err := json.MarshalIndent(jsonData, "   ", "  "); err == nil {
+				fmt.Printf("   Data: %s\n", string(prettyJSON))
+			} else {
+				fmt.Printf("   Data: %s\n", data)
+			}
+		} else {
+			fmt.Printf("   Data: %s\n", data)
+		}
+	}
+
+	if retry, ok := event["retry"]; ok {
+		fmt.Printf("   Retry: %s ms\n", retry)
+	}
+
+	fmt.Println()
+}
+
+func publishEvent(event, data, topic string) {
+	fmt.Printf("📤 Publishing event '%s'\n", event)
+
+	// This is a placeholder for publishing events
+	// In practice, you'd need an API endpoint to publish events
+	fmt.Println("=====================================")
+	fmt.Printf("Event: %s\n", event)
+	fmt.Printf("Data: %s\n", data)
+	if topic != "" {
+		fmt.Printf("Topic: %s\n", topic)
+	}
+	fmt.Println()
+	fmt.Println("💡 To implement event publishing, create an API endpoint:")
+	fmt.Println()
+	fmt.Println("```go")
+	fmt.Println("api.router.Post(\"/api/sse/publish\", func(w http.ResponseWriter, r *http.Request) {")
+	fmt.Println("    var req struct {")
+	fmt.Println("        Event string `json:\"event\"`")
+	fmt.Println("        Data  string `json:\"data\"`")
+	fmt.Println("        Topic string `json:\"topic,omitempty\"`")
+	fmt.Println("    }")
+	fmt.Println("    json.NewDecoder(r.Body).Decode(&req)")
+	fmt.Println("    ")
+	fmt.Println("    sseEvent := sse.Event{")
+	fmt.Println("        Event: req.Event,")
+	fmt.Println("        Data:  req.Data,")
+	fmt.Println("    }")
+	fmt.Println("    ")
+	fmt.Println("    if req.Topic != \"\" {")
+	fmt.Println("        api.sseManager.PublishToTopic(req.Topic, sseEvent)")
+	fmt.Println("    } else {")
+	fmt.Println("        api.sseManager.Publish(sseEvent)")
+	fmt.Println("    }")
+	fmt.Println("})")
+	fmt.Println("```")
+
+	// Try to publish via API if available
+	tryPublishViaAPI(event, data, topic)
+}
+
+func tryPublishViaAPI(event, data, topic string) {
+	publishEndpoint := "http://localhost:8080/api/sse/publish"
+
+	payload := map[string]string{
+		"event": event,
+		"data":  data,
+	}
+	if topic != "" {
+		payload["topic"] = topic
+	}
+
+	jsonData, _ := json.Marshal(payload)
+
+	fmt.Printf("\n🔍 Attempting to publish via %s...\n", publishEndpoint)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(publishEndpoint, "application/json", strings.NewReader(string(jsonData)))
+	if err != nil {
+		fmt.Printf("❌ Could not connect to publish endpoint: %v\n", err)
+		fmt.Println("💡 Implement the publish endpoint in your API to enable CLI publishing")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		fmt.Println("✅ Event published successfully!")
+	} else {
+		fmt.Printf("❌ Publish endpoint returned status %d\n", resp.StatusCode)
+	}
+}

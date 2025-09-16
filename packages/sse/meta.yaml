@@ -1,0 +1,111 @@
+name: "vandor/sse"
+title: "Server-Sent Events Manager"
+description: "Production-ready SSE manager with topic-based subscriptions, heartbeats, and graceful shutdown for real-time web applications"
+type: "fx-module"
+version: "v1.0.0"
+templates: "templates"
+destination: "internal/vpkg/vandor/sse"
+author: "Vandor Team"
+license: "MIT"
+tags: ["sse", "websockets", "real-time", "events", "streaming", "full-backend"]
+
+# Special vpkg capabilities
+capabilities:
+  - "real-time"        # Real-time event streaming
+  - "infrastructure"   # Core infrastructure component
+  - "cli-commands"     # Provides CLI commands for monitoring and testing
+
+# CLI commands provided by this package
+cli:
+  entry: "cli/main.go"
+  commands:
+    - name: "stats"
+      description: "Show SSE manager statistics"
+      usage: "stats"
+    - name: "test-connection"
+      description: "Test SSE endpoint connectivity"
+      usage: "test-connection [endpoint]"
+      examples:
+        - "test-connection"
+        - "test-connection http://localhost:8080/events"
+    - name: "monitor"
+      description: "Monitor live SSE events"
+      usage: "monitor [endpoint]"
+      examples:
+        - "monitor"
+        - "monitor http://localhost:8080/events?topics=user:123"
+    - name: "publish"
+      description: "Publish an event (requires API endpoint)"
+      usage: "publish <event> <data> [topic]"
+      examples:
+        - "publish notification 'Hello World'"
+        - "publish user_update '{\"id\":123}' user:123"
+
+# Dependencies
+dependencies:
+  - "go.uber.org/fx"
+
+# Template files organized by destination
+files:
+  # Infrastructure files (installed to internal/vpkg/vandor/sse)
+  infrastructure:
+    - "templates/infrastructure/infrastructure/sse/sse.go.tmpl"
+    - "templates/infrastructure/infrastructure/sse/module.go.tmpl"
+    - "templates/infrastructure/cli/main.go.tmpl"
+
+  # Package tracking (installed to vpkg location)
+  package:
+    - "templates/package/meta.yaml.tmpl"
+
+# Installation hooks
+install:
+  post_install:
+    - "Set up SSE infrastructure with production-ready manager"
+    - "Add SSE module to your app.go imports"
+    - "CLI commands available via: vandor vpkg exec vandor/sse <command>"
+
+# Usage instructions
+usage: |
+  After installation:
+
+  1. Import SSE module in your app:
+     import sseInfra "your-project/internal/vpkg/vandor/sse/infrastructure/sse"
+
+  2. Add to your app modules:
+     var App = fx.New(
+       config.Module,
+       logger.Module,
+       sseInfra.Module,  // Add SSE module
+       // ... other modules
+     )
+
+  3. Access SSE manager in your HTTP routes:
+     func NewHttpApi(sseManager *sse.Manager) *HttpApi {
+       router.Get("/events", sseManager.ServeHTTP)
+       // ... rest of setup
+     }
+
+  4. Publish events from anywhere:
+     sseManager.Publish(sse.Event{Event: "notification", Data: "Hello World"})
+     sseManager.PublishToUser("123", sse.Event{Event: "user_update", Data: payload})
+
+  5. Monitor and test with CLI:
+     vandor vpkg exec vandor/sse stats
+     vandor vpkg exec vandor/sse test-connection
+     vandor vpkg exec vandor/sse monitor http://localhost:8080/events
+     vandor vpkg exec vandor/sse publish notification "Hello World"
+
+  6. Client connections:
+     GET /events - Subscribe to all events
+     GET /events?topics=user:123,notifications - Subscribe to specific topics
+     GET /events?topic=user:123&topic=alerts - Multiple topic subscriptions
+
+  Complete SSE infrastructure with:
+  - Production-ready event streaming
+  - Topic-based subscriptions (user:123, notifications, etc.)
+  - Non-blocking broadcasts with backpressure handling
+  - Heartbeats to keep connections alive
+  - Graceful shutdown and cleanup
+  - Statistics and monitoring via sseManager.Stats()
+  - CLI tools for testing and monitoring
+  - Integration with authentication middleware

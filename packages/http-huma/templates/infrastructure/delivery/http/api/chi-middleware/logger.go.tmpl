@@ -1,0 +1,55 @@
+package chimiddleware
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/rs/zerolog"
+)
+
+func RegisterZerolog(router *chi.Mux, logger zerolog.Logger, pathPrefix string, excludePaths []string) {
+	router.Use(middleware.RequestID)
+	router.Use(zerologMiddleware(logger, pathPrefix, excludePaths))
+}
+
+func zerologMiddleware(logger zerolog.Logger, pathPrefix string, excludePaths []string) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip logging for excluded paths
+			for _, excludePath := range excludePaths {
+				if strings.HasPrefix(r.URL.Path, excludePath) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// Only log requests under the specified path prefix
+			if !strings.HasPrefix(r.URL.Path, pathPrefix) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			start := time.Now()
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+			defer func() {
+				logger.Info().
+					Str("method", r.Method).
+					Str("path", r.URL.Path).
+					Str("query", r.URL.RawQuery).
+					Int("status", ww.Status()).
+					Int("bytes", ww.BytesWritten()).
+					Dur("duration", time.Since(start)).
+					Str("request_id", middleware.GetReqID(r.Context())).
+					Str("remote_addr", r.RemoteAddr).
+					Str("user_agent", r.UserAgent()).
+					Msg("HTTP request")
+			}()
+
+			next.ServeHTTP(ww, r)
+		})
+	}
+}

@@ -1,0 +1,346 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/template"
+	"time"
+
+	"{{.ModuleName}}/internal/utils"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+
+	switch command {
+	case "add-route":
+		if len(os.Args) < 5 {
+			fmt.Println("Usage: add-route <group> <name> <method>")
+			fmt.Println("Example: add-route user login POST")
+			os.Exit(1)
+		}
+		addRoute(os.Args[2], os.Args[3], os.Args[4])
+	case "add-middleware":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: add-middleware <name>")
+			fmt.Println("Example: add-middleware auth")
+			os.Exit(1)
+		}
+		addMiddleware(os.Args[2])
+	case "sync-routes":
+		syncRoutes()
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Println("HTTP Huma CLI - Route Management")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  add-route <group> <name> <method>  Add a new HTTP route handler")
+	fmt.Println("  add-middleware <name>              Add a new HTTP middleware")
+	fmt.Println("  sync-routes                        Regenerate route registrations")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  add-route user login POST")
+	fmt.Println("  add-route product list GET")
+	fmt.Println("  add-middleware auth")
+	fmt.Println("  sync-routes")
+}
+
+func addRoute(group, name, method string) {
+	// Normalize inputs
+	group = strings.ToLower(group)
+	name = utils.ToPascalCase(name)
+	method = strings.ToUpper(method)
+
+	// Create route handler file in main project location
+	routeDir := filepath.Join("internal", "delivery", "http", "route", group)
+	if err := os.MkdirAll(routeDir, 0755); err != nil {
+		fmt.Printf("Error creating route directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	handlerPath := filepath.Join(routeDir, utils.ToSnakeCase(name)+".go")
+	if err := generateRouteHandler(handlerPath, group, name, method); err != nil {
+		fmt.Printf("Error generating route handler: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Created route handler: %s %s (%s)\n", method, name, group)
+	fmt.Printf("   File: %s\n", handlerPath)
+	fmt.Println()
+	fmt.Println("💡 Run 'vandor sync all' to update route registrations")
+}
+
+func addMiddleware(name string) {
+	name = utils.ToPascalCase(name)
+
+	// Add custom middleware to vpkg location
+	middlewareDir := filepath.Join("internal", "vpkg", "vandor", "http-huma", "delivery", "http", "api", "middleware")
+	if err := os.MkdirAll(middlewareDir, 0755); err != nil {
+		fmt.Printf("Error creating middleware directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	middlewarePath := filepath.Join(middlewareDir, "custom_"+utils.ToSnakeCase(name)+".go")
+	if err := generateMiddleware(middlewarePath, name); err != nil {
+		fmt.Printf("Error generating middleware: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Created middleware: %s\n", name)
+	fmt.Printf("   File: %s\n", middlewarePath)
+	fmt.Println()
+	fmt.Println("💡 Add to your server configuration manually")
+}
+
+func syncRoutes() {
+	fmt.Println("🔄 Syncing HTTP routes...")
+
+	// This will be called by vandor sync all automatically
+	// For manual sync, we can call the sync function directly
+	if err := regenerateRoutes(); err != nil {
+		fmt.Printf("Error syncing routes: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("✅ HTTP routes synced successfully!")
+}
+
+func generateRouteHandler(path, group, name, method string) error {
+	// Use the route handler template from examples
+	routeHandlerTemplate := `package {{.Group}}_handler
+
+import (
+	"context"
+
+	"{{.ModuleName}}/internal/core/model"
+	"{{.ModuleName}}/internal/core/service"
+	"{{.ModuleName}}/internal/delivery/http/api"
+	"{{.ModuleName}}/internal/delivery/http/method"
+	"{{.ModuleName}}/internal/types"
+	"github.com/danielgtaylor/huma/v2"
+)
+
+{{if eq .Method "POST"}}
+type {{.Name}}Payload struct {
+	// TODO: Define your request payload fields here
+	// Example: Name string ` + "`" + `json:"name" doc:"Name field" required:"true"` + "`" + `
+}
+
+type {{.Name}}Input struct {
+	// JSON body for POST
+	Body {{.Name}}Payload ` + "`" + `json:"body" contentType:"application/json"` + "`" + `
+}
+{{else if eq .Method "GET"}}
+type {{.Name}}Input struct {
+	// TODO: Define your query parameters here
+	// Example: ID string ` + "`" + `path:"id" doc:"Resource ID" required:"true"` + "`" + `
+}
+{{else if eq .Method "PUT"}}
+type {{.Name}}Payload struct {
+	// TODO: Define your request payload fields here
+}
+
+type {{.Name}}Input struct {
+	// TODO: Define path parameters
+	// ID string ` + "`" + `path:"id" doc:"Resource ID" required:"true"` + "`" + `
+
+	// JSON body for PUT
+	Body {{.Name}}Payload ` + "`" + `json:"body" contentType:"application/json"` + "`" + `
+}
+{{else if eq .Method "DELETE"}}
+type {{.Name}}Input struct {
+	// TODO: Define path parameters
+	// ID string ` + "`" + `path:"id" doc:"Resource ID" required:"true"` + "`" + `
+}
+{{else}}
+type {{.Name}}Input struct {
+	// TODO: Define your input parameters based on method {{.Method}}
+}
+{{end}}
+
+{{if eq .Method "DELETE"}}
+type {{.Name}}Output types.OutputResponseMessage
+{{else}}
+type {{.Name}}Output types.OutputResponseData[{{.Name}}Data]
+
+type {{.Name}}Data struct {
+	// TODO: Define your response data structure
+	// Example: ID string ` + "`" + `json:"id"` + "`" + `
+	// Example: Message string ` + "`" + `json:"message"` + "`" + `
+}
+{{end}}
+
+type {{.Name}}Handler model.HTTPHandler[{{.Name}}Input, {{.Name}}Output]
+
+type {{.LowerName}} struct {
+	api     huma.API
+	service *service.Services
+}
+
+func New{{.Name}}(
+	api *api.HttpApi,
+	service *service.Services,
+) {{.Name}}Handler {
+	h := &{{.LowerName}}{
+		api:     api.BaseAPI,
+		service: service,
+	}
+	h.RegisterRoutes()
+	return h
+}
+
+func (h *{{.LowerName}}) RegisterRoutes() {
+	api := h.api
+	method.{{.Method}}(api, "/{{.Group}}/{{.PathName}}", method.Operation{
+		Summary:     "{{.Name}} {{.Method}}",
+		Description: "{{.Name}} endpoint",
+		Tags:        []string{"{{.GroupTitle}}"},
+		BearerAuth:  {{.RequireAuth}}, // TODO: Set to true if authentication required
+		// Tenant:      false, // TODO: Set to true if tenant-specific
+		// Job:         false, // TODO: Set to true if job-specific
+		// RoleAllowed: []enum.UserRole{enum.UserRoleAdmin}, // TODO: Define allowed roles
+	}, h.Handler)
+}
+
+func (h *{{.LowerName}}) Handler(ctx context.Context, input *{{.Name}}Input) (*{{.Name}}Output, error) {
+	{{if eq .Method "DELETE"}}
+	// TODO: Implement delete logic here
+	// Example: err := h.service.SomeService.Delete(ctx, input.ID)
+	// if err != nil {
+	//     return nil, err
+	// }
+
+	return (*{{.Name}}Output)(types.GenerateOutputResponseMessage("{{.Name}} deleted successfully")), nil
+	{{else}}
+	// TODO: Implement your business logic here
+	// Example:
+	// result, err := h.service.SomeService.SomeMethod(ctx, serviceInput)
+	// if err != nil {
+	//     return nil, err
+	// }
+
+	data := &{{.Name}}Data{
+		// TODO: Map your service response to output data
+		// Example: ID: result.ID,
+		// Example: Message: "Success",
+	}
+
+	return (*{{.Name}}Output)(types.GenerateOutputResponseData(data)), nil
+	{{end}}
+}
+`
+
+	tmpl, err := template.New("route_handler").Parse(routeHandlerTemplate)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	data := struct {
+		ModuleName   string
+		Group        string
+		GroupTitle   string
+		Name         string
+		LowerName    string
+		Method       string
+		PathName     string
+		RequireAuth  bool
+	}{
+		ModuleName:  utils.GetModuleName(),
+		Group:       group,
+		GroupTitle:  utils.ToPascalCase(group),
+		Name:        name,
+		LowerName:   strings.ToLower(name),
+		Method:      method,
+		PathName:    utils.ToKebabCase(name),
+		RequireAuth: method != "GET", // Default: GET doesn't require auth, others do
+	}
+
+	return tmpl.Execute(file, data)
+}
+
+func generateMiddleware(path, name string) error {
+	middlewareTemplate := `package middleware
+
+import (
+	"net/http"
+
+	"{{.ModuleName}}/internal/enum"
+	"github.com/danielgtaylor/huma/v2"
+)
+
+func New{{.Name}}Middleware(api huma.API) func(ctx huma.Context, next func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		// TODO: Implement your middleware logic here
+		// Example:
+		// if !isAllowed(ctx) {
+		//     huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized")
+		//     return
+		// }
+
+		// Add data to context if needed
+		// ctx = huma.WithValue(ctx, "{{.NameLower}}", someValue)
+
+		next(ctx)
+	}
+}
+
+// TODO: Add helper functions for your middleware
+// Example:
+// func isAllowed(ctx huma.Context) bool {
+//     // Implement your logic
+//     return true
+// }
+`
+
+	tmpl, err := template.New("middleware").Parse(middlewareTemplate)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	data := struct {
+		ModuleName string
+		Name       string
+		NameLower  string
+	}{
+		ModuleName: utils.GetModuleName(),
+		Name:       name,
+		NameLower:  strings.ToLower(name),
+	}
+
+	return tmpl.Execute(file, data)
+}
+
+func regenerateRoutes() error {
+	// This function will regenerate the routes.go file
+	// It will scan internal/delivery/http/route/ for route handlers
+	// and automatically register them
+
+	fmt.Println("TODO: Implement route regeneration logic")
+	fmt.Println("This will be handled by the sync integration system")
+	return nil
+}

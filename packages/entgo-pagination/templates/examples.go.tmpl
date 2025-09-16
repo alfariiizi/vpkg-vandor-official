@@ -1,0 +1,254 @@
+package pagination_test
+
+import (
+	"context"
+	"testing"
+	"time"
+	"strconv"
+
+	pagination "{{.Module}}/internal/vpkg/vandor/entgo-pagination"
+	"{{.Module}}/internal/infrastructure/db"
+	"{{.Module}}/internal/infrastructure/db/user"
+	"github.com/labstack/echo/v4"
+)
+
+// Example: Configure global pagination defaults
+func ExampleConfigureDefaults() {
+	// Set app-wide pagination defaults by modifying the singleton
+	pagination.Default.DefaultLimit = 25  // Default page size
+	pagination.Default.MaxLimit = 500     // Maximum page size
+
+	// All pagination calls will now use these defaults
+	req := pagination.DefaultRequest()  // Page: 1, Limit: 25
+	req = pagination.ValidateRequest(req)
+
+	println("Default limit:", req.Limit) // Output: 25
+}
+
+// Example: Basic pagination usage
+func ExamplePaginate_basic() {
+	ctx := context.Background()
+	client := getTestClient() // Your test client setup
+
+	req := pagination.PaginationRequest{
+		Page:  1,
+		Limit: 10,
+	}
+
+	query := client.User.Query()
+	result, err := pagination.Paginate[*db.User](ctx, query, req)
+	if err != nil {
+		panic(err)
+	}
+
+	// Use result.Data for the users
+	// Use result.Pagination for metadata
+	for _, user := range result.Data {
+		println(user.Name)
+	}
+}
+
+// Example: Pagination with filters and ordering
+func ExamplePaginate_withFilters() {
+	ctx := context.Background()
+	client := getTestClient()
+
+	req := pagination.PaginationRequest{
+		Page:  1,
+		Limit: 20,
+	}
+
+	query := client.User.Query().
+		Where(user.StatusEQ(user.StatusActive)).
+		Order(rest.Desc(user.FieldCreatedAt))
+
+	result, err := pagination.Paginate[*rest.User](ctx, query, req)
+	if err != nil {
+		panic(err)
+	}
+
+	// Process paginated active users ordered by creation date
+	for _, user := range result.Data {
+		println(user.Name, user.CreatedAt)
+	}
+}
+
+// Example: Using the query builder for complex scenarios
+func ExamplePaginationQueryBuilder() {
+	ctx := context.Background()
+	client := getTestClient()
+
+	req := pagination.PaginationRequest{
+		Page:  1,
+		Limit: 15,
+	}
+
+	builder := pagination.NewPaginationQueryBuilder[*rest.User](client.User.Query())
+
+	result, err := builder.
+		WithFilter(user.StatusEQ(user.StatusActive)).
+		WithFilter(user.CreatedAtGT(time.Now().AddDate(0, -1, 0))). // Last month
+		WithOrder(rest.Desc(user.FieldCreatedAt)).
+		Paginate(ctx, req)
+
+	if err != nil {
+		panic(err)
+	}
+
+	// Process recently active users
+	for _, user := range result.Data {
+		println(user.Name, user.CreatedAt)
+	}
+}
+
+// Example: Cursor-based pagination for high performance
+func ExamplePaginateCursor() {
+	ctx := context.Background()
+	client := getTestClient()
+
+	req := pagination.CursorPaginationRequest{
+		Limit:  20,
+		Cursor: "", // Empty for first page, use NextCursor from previous response
+	}
+
+	query := client.User.Query().Order(rest.Asc(user.FieldID))
+
+	result, err := pagination.PaginateCursor[*rest.User](
+		ctx,
+		query,
+		req,
+		user.FieldID, // cursor field
+		func(u *rest.User) interface{} { return u.ID }, // cursor value extractor
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	// Process users
+	for _, user := range result.Data {
+		println(user.Name)
+	}
+
+	// Use result.Pagination.NextCursor for the next page
+	if result.Pagination.HasNext {
+		println("Next cursor:", *result.Pagination.NextCursor)
+	}
+}
+
+// Example: Custom pagination for complex queries
+func ExamplePaginateWithCustomQuery() {
+	ctx := context.Background()
+	client := getTestClient()
+
+	req := pagination.PaginationRequest{
+		Page:  1,
+		Limit: 10,
+	}
+
+	// Custom count query (e.g., with complex joins)
+	countQuery := func(ctx context.Context) (int, error) {
+		return client.User.Query().
+			Where(user.StatusEQ(user.StatusActive)).
+			Count(ctx)
+	}
+
+	// Custom data query
+	dataQuery := func(ctx context.Context, limit, offset int) ([]*rest.User, error) {
+		return client.User.Query().
+			Where(user.StatusEQ(user.StatusActive)).
+			Order(rest.Desc(user.FieldCreatedAt)).
+			Limit(limit).
+			Offset(offset).
+			All(ctx)
+	}
+
+	result, err := pagination.PaginateWithCustomQuery[*rest.User](
+		ctx,
+		countQuery,
+		dataQuery,
+		req,
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	// Process custom paginated results
+	for _, user := range result.Data {
+		println(user.Name)
+	}
+}
+
+// Example: Repository layer with pagination
+type UserRepository struct {
+	client *rest.Client
+}
+
+func (r *UserRepository) GetActiveUsers(ctx context.Context, req pagination.PaginationRequest) (*pagination.PaginationResponse[*rest.User], error) {
+	query := r.client.User.Query().Where(user.StatusEQ(user.StatusActive))
+	return pagination.Paginate[*rest.User](ctx, query, req)
+}
+
+func (r *UserRepository) SearchUsers(ctx context.Context, searchTerm string, req pagination.PaginationRequest) (*pagination.PaginationResponse[*rest.User], error) {
+	builder := pagination.NewPaginationQueryBuilder[*rest.User](r.client.User.Query())
+
+	result, err := builder.
+		WithFilter(user.NameContains(searchTerm)).
+		WithOrder(rest.Asc(user.FieldName)).
+		Paginate(ctx, req)
+
+	return result, err
+}
+
+// Example: Usecase layer with pagination
+type UserUsecase struct {
+	userRepo *UserRepository
+}
+
+func (u *UserUsecase) GetUserList(ctx context.Context, page, limit int) (*pagination.PaginationResponse[*rest.User], error) {
+	req := pagination.ValidatePaginationRequest(pagination.PaginationRequest{
+		Page:  page,
+		Limit: limit,
+	})
+
+	return u.userRepo.GetActiveUsers(ctx, req)
+}
+
+// Example: HTTP handler with pagination
+type UserHandler struct {
+	userUsecase *UserUsecase
+}
+
+func (h *UserHandler) GetUsers(c echo.Context) error {
+	// Parse pagination parameters from query
+	page := 1
+	limit := 20
+
+	if p := c.QueryParam("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	if l := c.QueryParam("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	// Get paginated users
+	result, err := h.userUsecase.GetUserList(c.Request().Context(), page, limit)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, result)
+}
+
+// Test helper function (implement based on your test setup)
+func getTestClient() *rest.Client {
+	// Return your test database client
+	// This would typically be set up in your test infrastructure
+	return nil
+}
